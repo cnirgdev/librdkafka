@@ -1,0 +1,17 @@
+CONFIG := ./config.h
+LIBS   := ./src-cpp/librdkafka++.a  \
+          ./src/librdkafka.a
+
+all: $(LIBS)
+
+$(CONFIG):
+	@echo "configuring librdkafka"
+	./configure
+
+$(LIBS): $(CONFIG)
+	@echo "building librdkafka"
+	make libs
+
+clean:
+	@echo "cleaning librdkafka"
+	make distclean
