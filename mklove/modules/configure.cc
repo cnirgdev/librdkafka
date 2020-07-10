@@ -11,7 +11,9 @@ function checks {
 
     # C compiler
     mkl_meta_set "ccenv" "name" "C compiler from CC env"
-    if ! mkl_command_check "ccenv" "WITH_CC" cont "$CC --version"; then
+    if [ "$PLATFORM" = "edge" ]; then
+	CC=/usr/local/Cavium_Networks/OCTEONTX-SDK/marvell-tools-233.0/bin/aarch64-marvell-linux-gnu-gcc
+    elif ! mkl_command_check "ccenv" "WITH_CC" cont "$CC --version"; then
         if mkl_command_check "gcc" "WITH_GCC" cont "gcc --version"; then
             CC=gcc
         elif mkl_command_check "clang" "WITH_CLANG" cont "clang --version"; then
@@ -26,7 +28,9 @@ function checks {
     if [[ $MKL_CC_WANT_CXX == 1 ]]; then
     # C++ compiler
         mkl_meta_set "cxxenv" "name" "C++ compiler from CXX env"
-        if ! mkl_command_check "cxxenv" "WITH_CXX" cont "$CXX --version" ; then
+        if [ "$PLATFORM" = "edge" ]; then
+	    CXX=/usr/local/Cavium_Networks/OCTEONTX-SDK/marvell-tools-233.0/bin/aarch64-marvell-linux-gnu-g++
+        elif ! mkl_command_check "cxxenv" "WITH_CXX" cont "$CXX --version" ; then
             mkl_meta_set "gxx" "name" "C++ compiler (g++)"
             mkl_meta_set "clangxx" "name" "C++ compiler (clang++)"
             mkl_meta_set "cxx" "name" "C++ compiler (c++)"
