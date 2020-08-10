@@ -16,7 +16,7 @@ all: $(LIBS)
 
 $(CONFIG):
 	@echo "configuring librdkafka"
-	./configure
+	./configure --disable-sasl --disable-ssl
 
 $(LIBS): $(CONFIG)
 	@echo "building librdkafka"
