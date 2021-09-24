@@ -1,22 +1,20 @@
 CONFIG := ./config.h
 LIBS   := ./src-cpp/librdkafka++.a  \
           ./src/librdkafka.a
+ECONF_FLAGS :=
 
 SDK_ROOT := $(abspath $(shell pwd)/../../otx-sdk-6.2.0)
 
 
-ifeq ($(PLATFORM), edge)
-        MARVELL_TOOLS_ROOT := $(SDK_ROOT)/marvell-tools-233.0
-        # compiler
-        CXX := $(MARVELL_TOOLS_ROOT)/bin/aarch64-marvell-linux-gnu-g++
-	CC  := $(MARVELL_TOOLS_ROOT)/bin/aarch64-marvell-linux-gnu-gcc
+ifeq ($(PLATFORM), MC-E)
+ECONF_FLAGS := --cc=$(CCC) --cxx=$(CCXX) --arch=arm64 
 endif
 
 all: $(LIBS)
 
 $(CONFIG):
 	@echo "configuring librdkafka"
-	./configure --disable-sasl --disable-ssl
+	./configure --disable-sasl --disable-ssl $(ECONF_FLAGS)
 
 $(LIBS): $(CONFIG)
 	@echo "building librdkafka"
