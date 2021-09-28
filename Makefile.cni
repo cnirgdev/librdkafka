@@ -6,7 +6,7 @@ ECONF_FLAGS :=
 SDK_ROOT := $(abspath $(shell pwd)/../../otx-sdk-6.2.0)
 
 
-ifeq ($(PLATFORM), MC-E)
+ifneq (,$(filter $(PLATFORM),mce MCE MC-E))
 ECONF_FLAGS := --cc=$(CCC) --cxx=$(CCXX) --arch=arm64 
 endif
 
