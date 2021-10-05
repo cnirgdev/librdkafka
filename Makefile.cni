@@ -1,24 +1,34 @@
 CONFIG := ./config.h
 LIBS   := ./src-cpp/librdkafka++.a  \
           ./src/librdkafka.a
-ECONF_FLAGS :=
-
-SDK_ROOT := $(abspath $(shell pwd)/../../otx-sdk-6.2.0)
-
 
 ifneq (,$(filter $(PLATFORM),mce MCE MC-E))
-ECONF_FLAGS := --cc=$(CCC) --cxx=$(CCXX) --arch=arm64 
+    override PLATFORM := MC-E
+    include $(OTX_SDK_ROOT)/cni-otx.mk  # OTX_ROOT must be passed in
+    ARCH := $(OTX_ARCH)
+    ARCH_FLAG := $(OTX_ARCH_FLAG)
+    CC := $(OTX_SDK_ROOT)/$(OTX_CC)
+    CXX := $(OTX_SDK_ROOT)/$(OTX_CXX)
+    CONFIG_FLAGS := --cc=$(CC) --cxx=$(CXX) --arch=arm64 
+else
+    override PLATFORM=MC-X
+    CONFIG_FLAGS :=
 endif
 
+$(info === Building librdkafka for platform $(PLATFORM))
+$(info     --> Using CC  is $(CC))
+$(info     --> Using CXX is $(CXX))
+
 all: $(LIBS)
+	@echo "librdkafka build for $(PLATFORM): SUCCESS"
 
 $(CONFIG):
 	@echo "configuring librdkafka"
-	./configure --disable-sasl --disable-ssl $(ECONF_FLAGS)
+	./configure --disable-sasl --disable-ssl $(CONFIG_FLAGS)
 
 $(LIBS): $(CONFIG)
 	@echo "building librdkafka"
-	CXX=$(CXX) CC=$(CC) PLATFORM=$(PLATFORM) make libs
+	make libs
 
 clean:
 	@echo "cleaning librdkafka"
