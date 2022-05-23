@@ -26,7 +26,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 #define RD_UNITTEST_QPC_OVERRIDES 1
 #endif
 
@@ -37,6 +37,7 @@
 #include "rdbuf.h"
 #include "crc32c.h"
 #include "rdmurmur2.h"
+#include "rdfnv1a.h"
 #if WITH_HDRHISTOGRAM
 #include "rdhdrhistogram.h"
 #endif
@@ -436,6 +437,12 @@ static int unittest_rdclock (void) {
 
 /**@}*/
 
+extern int unittest_cgrp (void);
+#if WITH_SASL_SCRAM
+extern int unittest_scram (void);
+#endif
+extern int unittest_assignors (void);
+extern int unittest_map (void);
 
 int rd_unittest (void) {
         int fails = 0;
@@ -443,16 +450,18 @@ int rd_unittest (void) {
                 const char *name;
                 int (*call) (void);
         } unittests[] = {
-                { "sysqueue", unittest_sysqueue },
-                { "rdbuf",    unittest_rdbuf },
-                { "rdvarint", unittest_rdvarint },
-                { "crc32c",   unittest_crc32c },
-                { "msg",      unittest_msg },
+                { "sysqueue",   unittest_sysqueue },
+                { "map",        unittest_map },
+                { "rdbuf",      unittest_rdbuf },
+                { "rdvarint",   unittest_rdvarint },
+                { "crc32c",     unittest_crc32c },
+                { "msg",        unittest_msg },
                 { "murmurhash", unittest_murmur2 },
+                { "fnv1a",      unittest_fnv1a },
 #if WITH_HDRHISTOGRAM
                 { "rdhdrhistogram", unittest_rdhdrhistogram },
 #endif
-#ifdef _MSC_VER
+#ifdef _WIN32
                 { "rdclock", unittest_rdclock },
 #endif
                 { "conf", unittest_conf },
@@ -462,10 +471,16 @@ int rd_unittest (void) {
                 { "sasl_oauthbearer", unittest_sasl_oauthbearer },
 #endif
                 { "aborted_txns", unittest_aborted_txns },
+                { "cgrp", unittest_cgrp },
+#if WITH_SASL_SCRAM
+                { "scram", unittest_scram },
+#endif
+                { "assignors", unittest_assignors },
                 { NULL }
         };
         int i;
         const char *match = rd_getenv("RD_UT_TEST", NULL);
+        int cnt = 0;
 
         if (rd_getenv("RD_UT_ASSERT", NULL))
                 rd_unittest_assert_on_failure = rd_true;
@@ -479,6 +494,8 @@ int rd_unittest (void) {
                 rd_unittest_slow = rd_true;
         }
 
+        rd_kafka_global_init();
+
 #if ENABLE_CODECOV
         for (i = 0 ; i < RD_UT_COVNR_MAX+1 ; i++)
                 rd_atomic64_init(&rd_ut_covnrs[i], 0);
@@ -487,7 +504,7 @@ int rd_unittest (void) {
         for (i = 0 ; unittests[i].name ; i++) {
                 int f;
 
-                if (match && strcmp(match, unittests[i].name))
+                if (match && !strstr(unittests[i].name, match))
                         continue;
 
                 f = unittests[i].call();
@@ -495,6 +512,7 @@ int rd_unittest (void) {
                           unittests[i].name,
                           f ? "\033[31mFAIL" : "\033[32mPASS");
                 fails += f;
+                cnt++;
         }
 
 #if ENABLE_CODECOV
@@ -514,6 +532,9 @@ int rd_unittest (void) {
         }
 #endif
 #endif
+
+        if (!cnt && match)
+                RD_UT_WARN("No unittests matching \"%s\"", match);
 
         return fails;
 }

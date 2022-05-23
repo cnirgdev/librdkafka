@@ -190,33 +190,56 @@ static void print_partition_list (FILE *fp,
 }
 static void rebalance_cb (rd_kafka_t *rk,
                           rd_kafka_resp_err_t err,
-			  rd_kafka_topic_partition_list_t *partitions,
+                          rd_kafka_topic_partition_list_t *partitions,
                           void *opaque) {
+        rd_kafka_error_t *error = NULL;
+        rd_kafka_resp_err_t ret_err = RD_KAFKA_RESP_ERR_NO_ERROR;
 
-	fprintf(stderr, "%% Consumer group rebalanced: ");
+        fprintf(stderr, "%% Consumer group rebalanced: ");
 
-	switch (err)
-	{
-	case RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS:
-		fprintf(stderr, "assigned:\n");
-		print_partition_list(stderr, partitions);
-		rd_kafka_assign(rk, partitions);
-		wait_eof += partitions->cnt;
-		break;
+        switch (err)
+        {
+        case RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS:
+                fprintf(stderr, "assigned (%s):\n",
+                        rd_kafka_rebalance_protocol(rk));
+                print_partition_list(stderr, partitions);
 
-	case RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS:
-		fprintf(stderr, "revoked:\n");
-		print_partition_list(stderr, partitions);
-		rd_kafka_assign(rk, NULL);
-		wait_eof = 0;
-		break;
+                if (!strcmp(rd_kafka_rebalance_protocol(rk), "COOPERATIVE"))
+                        error = rd_kafka_incremental_assign(rk, partitions);
+                else
+                        ret_err = rd_kafka_assign(rk, partitions);
+                wait_eof += partitions->cnt;
+                break;
 
-	default:
-		fprintf(stderr, "failed: %s\n",
+        case RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS:
+                fprintf(stderr, "revoked (%s):\n",
+                        rd_kafka_rebalance_protocol(rk));
+                print_partition_list(stderr, partitions);
+
+                if (!strcmp(rd_kafka_rebalance_protocol(rk), "COOPERATIVE")) {
+                        error = rd_kafka_incremental_unassign(rk, partitions);
+                        wait_eof -= partitions->cnt;
+                } else {
+                        ret_err = rd_kafka_assign(rk, NULL);
+                        wait_eof = 0;
+                }
+                break;
+
+        default:
+                fprintf(stderr, "failed: %s\n",
                         rd_kafka_err2str(err));
                 rd_kafka_assign(rk, NULL);
-		break;
-	}
+                break;
+        }
+
+        if (error) {
+                fprintf(stderr, "incremental assign failure: %s\n",
+                        rd_kafka_error_string(error));
+                rd_kafka_error_destroy(error);
+        } else if (ret_err) {
+                fprintf(stderr, "assign failure: %s\n",
+                        rd_kafka_err2str(ret_err));
+        }
 }
 
 
@@ -477,15 +500,6 @@ int main (int argc, char **argv) {
                         exit(1);
                 }
 
-                /* Consumer groups always use broker based offset storage */
-                if (rd_kafka_topic_conf_set(topic_conf, "offset.store.method",
-                                            "broker",
-                                            errstr, sizeof(errstr)) !=
-                    RD_KAFKA_CONF_OK) {
-                        fprintf(stderr, "%% %s\n", errstr);
-                        exit(1);
-                }
-
                 /* Set default topic config for pattern-matched topics. */
                 rd_kafka_conf_set_default_topic_conf(conf, topic_conf);
 
@@ -496,6 +510,13 @@ int main (int argc, char **argv) {
                                   NULL, 0);
         }
 
+        /* Set bootstrap servers */
+        if (rd_kafka_conf_set(conf, "bootstrap.servers", brokers,
+                              errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+                fprintf(stderr, "%% %s\n", errstr);
+                exit(1);
+        }
+
         /* Create Kafka handle */
         if (!(rk = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
                                 errstr, sizeof(errstr)))) {
@@ -504,13 +525,6 @@ int main (int argc, char **argv) {
                         errstr);
                 exit(1);
         }
-
-        /* Add brokers */
-        if (rd_kafka_brokers_add(rk, brokers) == 0) {
-                fprintf(stderr, "%% No valid brokers specified\n");
-                exit(1);
-        }
-
 
         if (mode == 'D') {
                 int r;

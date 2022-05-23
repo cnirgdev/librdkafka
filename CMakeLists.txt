@@ -5,7 +5,7 @@ parseversion("src/rdkafka.h")
 
 project(RdKafka VERSION ${RDKAFKA_VERSION})
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/packaging/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cmake/Modules/")
 
 # Options. No 'RDKAFKA_' prefix to match old C++ code. {
 
@@ -16,7 +16,6 @@ option(WITHOUT_OPTIMIZATION "Disable optimization" OFF)
 
 option(ENABLE_DEVEL "Enable development asserts, checks, etc" OFF)
 option(ENABLE_REFCNT_DEBUG "Enable refcnt debugging" OFF)
-option(ENABLE_SHAREDPTR_DEBUG "Enable sharedptr debugging" OFF)
 set(TRYCOMPILE_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/packaging/cmake/try_compile")
 set(BUILT_WITH "CMAKE")
 
@@ -55,7 +54,7 @@ endif()
 # }
 
 # ZSTD {
-find_package(Zstd QUIET)
+find_package(ZSTD QUIET)
 if(ZSTD_FOUND)
   set(with_zstd_default ON)
 else()
@@ -195,7 +194,6 @@ set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 # * WITHOUT_OPTIMIZATION
 # * ENABLE_DEVEL
 # * ENABLE_REFCNT_DEBUG
-# * ENABLE_SHAREDPTR_DEBUG
 # * HAVE_ATOMICS_32
 # * HAVE_ATOMICS_32_SYNC
 # * HAVE_ATOMICS_64

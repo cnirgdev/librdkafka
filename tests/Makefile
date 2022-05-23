@@ -3,7 +3,7 @@ TESTSRCS_CXX= $(wildcard [08]*-*.cpp)
 OBJS	  = $(TESTSRCS_C:%.c=%.o) $(TESTSRCS_CXX:%.cpp=%.o)
 
 BIN	  = test-runner
-LIBS	 += -lrdkafka++ -lrdkafka -lstdc++
+LIBS	 += -lrdkafka++ -lrdkafka
 OBJS	 += test.o rusage.o testcpp.o \
 		tinycthread.o tinycthread_extra.o rdlist.o sockem.o \
 		sockem_ctrl.o
@@ -12,10 +12,17 @@ CXXFLAGS += -I../src -I../src-cpp
 LDFLAGS += -rdynamic -L../src -L../src-cpp
 
 # Latest Kafka version
-KAFKA_VERSION?=2.4.0
+KAFKA_VERSION?=2.7.0
 # Kafka versions for compatibility tests
-COMPAT_KAFKA_VERSIONS?=0.8.2.2 0.9.0.1 0.11.0.3 1.0.2 $(KAFKA_VERSION)
+COMPAT_KAFKA_VERSIONS?=0.8.2.2 0.9.0.1 0.11.0.3 1.0.2 2.4.1 $(KAFKA_VERSION)
+
+# Non-default scenarios (FIXME: read from scenarios/*)
+SCENARIOS?=noautocreate ak23
+
 -include ../Makefile.config
+
+# Use C++ compiler as linker
+CC_LD=$(CXX)
 
 all: $(BIN) run_par
 
@@ -35,7 +42,7 @@ non_sparse_connections: $(BIN)
 		--conf '{"parallel":1, "args": "-L -Q", "sparse_connections": "false"}' $(KAFKA_VERSION)
 
 sasl: $(BIN)
-	./sasl_test.py --conf '{"parallel":1, "args":"-L -Q"}' --debug $(KAFKA_VERSION)
+	./sasl_test.py --conf '{"parallel":1, "args":"-L -Q"}' $(KAFKA_VERSION)
 
 # Run the full test suite(s)
 full: broker broker_idempotent sasl
@@ -46,11 +53,11 @@ full: broker broker_idempotent sasl
 #
 quick:
 	@echo "Running quick(er) test suite (without sockem)"
-	./run-test.sh -p5 -Q -E
+	./run-test.sh -Q -E
 
 run_par: $(BIN)
 	@echo "Running tests in parallel"
-	./run-test.sh -p5
+	./run-test.sh
 
 run_seq: $(BIN)
 	@echo "Running tests sequentially"
@@ -58,17 +65,17 @@ run_seq: $(BIN)
 
 run_local: $(BIN)
 	@echo "Running local broker-less tests with idempotent producer"
-	./run-test.sh -p5 -l -P
+	./run-test.sh -l -P
 
 run_local_quick: $(BIN)
 	@echo "Running quick local broker-less tests with idempotent producer"
-	./run-test.sh -p5 -l -Q -P
+	./run-test.sh -l -Q -P
 
 idempotent_par: $(BIN)
-	./run-test.sh -p5 -P
+	./run-test.sh -P
 
 idempotent_seq: $(BIN)
-	./run-test.sh -p1 -P
+	./run-test.sh -P
 
 idempotent: idempotent_par
 
@@ -150,14 +157,24 @@ compat:
 	./broker_version_tests.py --rdkconf '{"args": "-Q"}' \
 		$(COMPAT_KAFKA_VERSIONS)
 
+# Run non-default scenarios
+scenarios: .PHONY
+	@echo "### Running test scenarios: $(SCENARIOS)"
+	@(for _SCENARIO in $(SCENARIOS) ; do \
+		./broker_version_tests.py --scenario "$$_SCENARIO" $(KAFKA_VERSION) ; \
+	done)
+
 
 # Run a full release / PR test.
 # (| is for not running suites in parallel)
-release-test: | asan tsan pristine-full compat
+release-test: | asan tsan pristine-full scenarios compat
 
 # Check resource usage (requires a running cluster environment)
 rusage:
 	./run-test.sh -R bare
 
+# Remove test reports, temporary test files, crash dumps, etc.
+clean-reports:
+	rm -f *.offset stats_*.json core vgcore.*
 
 -include $(DEPS)

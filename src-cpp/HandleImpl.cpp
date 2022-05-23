@@ -36,7 +36,8 @@ void RdKafka::consume_cb_trampoline(rd_kafka_message_t *msg, void *opaque) {
   RdKafka::HandleImpl *handle = static_cast<RdKafka::HandleImpl *>(opaque);
   RdKafka::Topic* topic = static_cast<Topic *>(rd_kafka_topic_opaque(msg->rkt));
 
-  RdKafka::MessageImpl message(topic, msg, false /*don't free*/);
+  RdKafka::MessageImpl message(RD_KAFKA_CONSUMER, topic, msg,
+                               false /*don't free*/);
 
   handle->consume_cb_->consume_cb(message, opaque);
 }
@@ -259,7 +260,7 @@ offset_commit_cb_trampoline (
 }
 
 
-void RdKafka::HandleImpl::set_common_config (RdKafka::ConfImpl *confimpl) {
+void RdKafka::HandleImpl::set_common_config (const RdKafka::ConfImpl *confimpl) {
 
   rd_kafka_conf_set_opaque(confimpl->rk_conf_, this);
 
@@ -295,7 +296,7 @@ void RdKafka::HandleImpl::set_common_config (RdKafka::ConfImpl *confimpl) {
   }
 
   if (confimpl->open_cb_) {
-#ifndef _MSC_VER
+#ifndef _WIN32
     rd_kafka_conf_set_open_cb(confimpl->rk_conf_, RdKafka::open_cb_trampoline);
     open_cb_ = confimpl->open_cb_;
 #endif

@@ -15,7 +15,7 @@ The stats are provided as a JSON object string.
 
 ## General structure
 
-All fields that contain sizes are are in bytes unless otherwise noted.
+All fields that contain sizes are in bytes unless otherwise noted.
 
 ```
 {
@@ -60,9 +60,9 @@ msg_size | int gauge | | Current total size of messages in producer queues
 msg_max | int | | Threshold: maximum number of messages allowed allowed on the producer queues
 msg_size_max | int | | Threshold: maximum total size of messages allowed on the producer queues
 tx | int | | Total number of requests sent to Kafka brokers
-txbytes | int | | Total number of bytes transmitted to Kafka brokers
+tx_bytes | int | | Total number of bytes transmitted to Kafka brokers
 rx | int | | Total number of responses received from Kafka brokers
-rxbytes | int | | Total number of bytes received from Kafka brokers
+rx_bytes | int | | Total number of bytes received from Kafka brokers
 txmsgs | int | | Total number of messages transmitted (produced) to Kafka brokers
 txmsg_bytes | int | | Total number of message bytes (including framing, such as per-Message framing and MessageSet/batch framing) transmitted to Kafka brokers
 rxmsgs | int | | Total number of messages consumed, not including ignored messages (due to offset, etc), from Kafka brokers.
@@ -89,7 +89,7 @@ stateage | int gauge | | Time since last broker state change (microseconds)
 outbuf_cnt | int gauge | | Number of requests awaiting transmission to broker
 outbuf_msg_cnt | int gauge | | Number of messages awaiting transmission to broker
 waitresp_cnt | int gauge | | Number of requests in-flight to broker awaiting response
-waitresp_msg_cnt | int gauge | | Number of messages in-flight to broker awaitign response
+waitresp_msg_cnt | int gauge | | Number of messages in-flight to broker awaiting response
 tx | int | | Total number of requests sent
 txbytes | int | | Total number of bytes sent
 txerrs | int | | Total number of transmission errors
@@ -99,7 +99,7 @@ rx | int | | Total number of responses received
 rxbytes | int | | Total number of bytes received
 rxerrs | int | | Total number of receive errors
 rxcorriderrs | int | | Total number of unmatched correlation ids in response (typically for timed out requests)
-rxpartial | int | | Total number of partial MessageSets received. The broker may return partial responses if the full MessageSet could not fit in remaining Fetch response size.
+rxpartial | int | | Total number of partial MessageSets received. The broker may return partial responses if the full MessageSet could not fit in the remaining Fetch response size.
 req | object | | Request type counters. Object key is the request name, value is the number of requests sent.
 zbuf_grow | int | | Total number of decompression buffer size increases
 buf_grow | int | | Total number of buffer size increases (deprecated, unused)
@@ -149,6 +149,7 @@ partition | int | 3 | Partition id
 Field | Type | Example | Description
 ----- | ---- | ------- | -----------
 topic | string | `"myatopic"` | Topic name
+age   | int gauge | | Age of client's topic object (milliseconds)
 metadata_age | int gauge | | Age of metadata from broker for this topic (milliseconds)
 batchsize | object | | Batch sizes in bytes. See *Window stats*·
 batchcnt | object | | Batch message counts. See *Window stats*·
@@ -198,7 +199,7 @@ Field | Type | Example | Description
 ----- | ---- | ------- | -----------
 state | string | "up"    | Local consumer group handler's state.
 stateage | int gauge | | Time elapsed since last state change (milliseconds).
-joinstate | string | "assigned" | Local consumer group handler's join state.
+join_state | string | "assigned" | Local consumer group handler's join state.
 rebalance_age | int gauge | | Time elapsed since last rebalance (assign or revoke) (milliseconds).
 rebalance_cnt | int | | Total number of rebalances (assign or revoke).
 rebalance_reason | string | | Last rebalance reason, or empty string.

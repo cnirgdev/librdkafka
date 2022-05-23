@@ -7,6 +7,7 @@ set(
     rdavl.c
     rdbuf.c
     rdcrc32.c
+    rdfnv1a.c
     rdkafka.c
     rdkafka_assignor.c
     rdkafka_broker.c
@@ -31,7 +32,9 @@ set(
     rdkafka_roundrobin_assignor.c
     rdkafka_sasl.c
     rdkafka_sasl_plain.c
+    rdkafka_sticky_assignor.c
     rdkafka_subscription.c
+    rdkafka_assignment.c
     rdkafka_timer.c
     rdkafka_topic.c
     rdkafka_transport.c
@@ -47,6 +50,7 @@ set(
     rdkafka_mock.c
     rdkafka_mock_handlers.c
     rdkafka_mock_cgrp.c
+    rdkafka_error.c
     rdlist.c
     rdlog.c
     rdmurmur2.c
@@ -56,10 +60,11 @@ set(
     rdstring.c
     rdunittest.c
     rdvarint.c
+    rdmap.c
     snappy.c
     tinycthread.c
     tinycthread_extra.c
-    xxhash.c
+    rdxxhash.c
 )
 
 if(WITH_SSL)
@@ -112,28 +117,44 @@ endif()
 if(WITHOUT_WIN32_CONFIG)
   list(APPEND rdkafka_compile_definitions WITHOUT_WIN32_CONFIG)
   if(WITH_SSL)
-    list(APPEND rdkafka_compile_definitions WITH_SSL)
+    list(APPEND rdkafka_compile_definitions WITH_SSL=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_SSL=0)
   endif(WITH_SSL)
   if(WITH_ZLIB)
-    list(APPEND rdkafka_compile_definitions WITH_ZLIB)
+    list(APPEND rdkafka_compile_definitions WITH_ZLIB=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_ZLIB=0)
   endif(WITH_ZLIB)
   if(WITH_SNAPPY)
-    list(APPEND rdkafka_compile_definitions WITH_SNAPPY)
+    list(APPEND rdkafka_compile_definitions WITH_SNAPPY=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_SNAPPY=0)
   endif(WITH_SNAPPY)
   if(WITH_ZSTD)
-    list(APPEND rdkafka_compile_definitions WITH_ZSTD)
+    list(APPEND rdkafka_compile_definitions WITH_ZSTD=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_ZSTD=0)
   endif(WITH_ZSTD)
   if(WITH_SASL_SCRAM)
-    list(APPEND rdkafka_compile_definitions WITH_SASL_SCRAM)
+    list(APPEND rdkafka_compile_definitions WITH_SASL_SCRAM=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_SASL_SCRAM=0)
   endif(WITH_SASL_SCRAM)
   if(WITH_SASL_OAUTHBEARER)
-    list(APPEND rdkafka_compile_definitions WITH_SASL_OAUTHBEARER)
+    list(APPEND rdkafka_compile_definitions WITH_SASL_OAUTHBEARER=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_SASL_OAUTHBEARER=0)
   endif(WITH_SASL_OAUTHBEARER)
   if(ENABLE_DEVEL)
-    list(APPEND rdkafka_compile_definitions ENABLE_DEVEL)
+    list(APPEND rdkafka_compile_definitions ENABLE_DEVEL=1)
+  else()
+    list(APPEND rdkafka_compile_definitions ENABLE_DEVEL=0)
   endif(ENABLE_DEVEL)
   if(WITH_PLUGINS)
-    list(APPEND rdkafka_compile_definitions WITH_PLUGINS)
+    list(APPEND rdkafka_compile_definitions WITH_PLUGIN=1)
+  else()
+    list(APPEND rdkafka_compile_definitions WITH_PLUGIN=0)
   endif(WITH_PLUGINS)
 endif()
 
@@ -149,12 +170,23 @@ if(NOT RDKAFKA_BUILD_STATIC)
   set_property(TARGET rdkafka PROPERTY SOVERSION ${LIBVER})
 endif()
 
+if(MINGW)
+  # Target Windows 8.1 to match the VS projects (MinGW defaults to an older WinAPI version)
+  list(APPEND rdkafka_compile_definitions WINVER=0x0603 _WIN32_WINNT=0x0603 UNICODE)
+endif(MINGW)
+
 # Support '#include <rdkafka.h>'
 target_include_directories(rdkafka PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>")
 target_compile_definitions(rdkafka PUBLIC ${rdkafka_compile_definitions})
 if(RDKAFKA_BUILD_STATIC)
   target_compile_definitions(rdkafka PUBLIC LIBRDKAFKA_STATICLIB)
 endif()
+
+if(MINGW)
+	message(STATUS "Detected MinGW build")
+  # MinGW ignores `#pragma comment(lib, ...)` so we need to specify link libs
+  target_link_libraries(rdkafka PUBLIC crypt32 ws2_32 secur32)
+endif(MINGW)
 
 if(WIN32)  
   if(RDKAFKA_BUILD_STATIC)
@@ -175,6 +207,7 @@ endif()
 
 if(WITH_ZLIB)
   find_package(ZLIB REQUIRED)
+  target_include_directories(rdkafka PUBLIC ${ZLIB_INCLUDE_DIRS})
   target_link_libraries(rdkafka PUBLIC ZLIB::ZLIB)
 endif()
 
@@ -194,7 +227,12 @@ if(WITH_SSL)
     add_dependencies(rdkafka bundled-ssl)
   else()
     find_package(OpenSSL REQUIRED)
+    target_include_directories(rdkafka PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_link_libraries(rdkafka PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+    get_target_property(OPENSSL_TARGET_TYPE OpenSSL::SSL TYPE)
+    if(OPENSSL_CRYPTO_LIBRARY MATCHES "\\.a$")
+      target_compile_definitions(rdkafka PUBLIC WITH_STATIC_LIB_libcrypto)
+    endif()
   endif()
 endif()
 
@@ -206,6 +244,7 @@ find_package(Threads REQUIRED)
 target_link_libraries(rdkafka PUBLIC Threads::Threads)
 
 if(WITH_SASL_CYRUS)
+  target_include_directories(rdkafka PUBLIC ${SASL_INCLUDE_DIRS})
   target_link_libraries(rdkafka PUBLIC ${SASL_LIBRARIES})
 endif()
 
@@ -214,6 +253,7 @@ if(WITH_LIBDL)
 endif()
 
 if(WITH_LZ4_EXT)
+  target_include_directories(rdkafka PUBLIC ${LZ4_INCLUDE_DIRS})
   target_link_libraries(rdkafka PUBLIC LZ4::LZ4)
 endif()
 

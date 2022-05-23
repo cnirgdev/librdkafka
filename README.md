@@ -1,7 +1,7 @@
 librdkafka - the Apache Kafka C/C++ client library
 ==================================================
 
-Copyright (c) 2012-2019, [Magnus Edenhill](http://www.edenhill.se/).
+Copyright (c) 2012-2020, [Magnus Edenhill](http://www.edenhill.se/).
 
 [https://github.com/edenhill/librdkafka](https://github.com/edenhill/librdkafka)
 
@@ -13,8 +13,14 @@ the producer and 3 million msgs/second for the consumer.
 
 **librdkafka** is licensed under the 2-clause BSD license.
 
+KAFKA is a registered trademark of The Apache Software Foundation and
+has been licensed for use by librdkafka. librdkafka has no
+affiliation with and is not endorsed by The Apache Software Foundation.
+
+
 # Features #
-  * High-level producer
+  * Full Exactly-Once-Semantics (EOS) support
+  * High-level producer, including Idempotent and Transactional producers
   * High-level balanced KafkaConsumer (requires broker >= 0.9)
   * Simple (legacy) consumer
   * Admin client
@@ -28,7 +34,7 @@ the producer and 3 million msgs/second for the consumer.
   * Debian package: librdkafka1 and librdkafka-dev in Debian and Ubuntu
   * RPM package: librdkafka and librdkafka-devel
   * Gentoo package: dev-libs/librdkafka
-  * Portable: runs on Linux, OSX, Win32, Solaris, FreeBSD, AIX, ...
+  * Portable: runs on Linux, MacOS X, Windows, Solaris, FreeBSD, AIX, ...
 
 # Documentation
 
@@ -87,7 +93,7 @@ $ ./vcpkg integrate install
 $ vcpkg install librdkafka
 ```
 
-The librdkafka paackage in vcpkg is kept up to date by Microsoft team members and community contributors.
+The librdkafka package in vcpkg is kept up to date by Microsoft team members and community contributors.
 If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.
 
 
@@ -105,10 +111,10 @@ If the version is out of date, please [create an issue or pull request](https://
 **NOTE**: Static linking of ZStd (requires zstd >= 1.2.1) in the producer
           enables encoding the original size in the compression frame header,
           which will speed up the consumer.
-          Use `STATIC_LIB_zstd=/path/to/libzstd.a ./configure --enable-static`
+          Use `STATIC_LIB_libzstd=/path/to/libzstd.a ./configure --enable-static`
           to enable static ZStd linking.
           MacOSX example:
-          `STATIC_LIB_zstd=$(brew ls -v zstd | grep libzstd.a$) ./configure --enable-static`
+          `STATIC_LIB_libzstd=$(brew ls -v zstd | grep libzstd.a$) ./configure --enable-static`
 
 
 ### Building
@@ -134,9 +140,9 @@ If the version is out of date, please [create an issue or pull request](https://
 
 1. Refer to the [examples directory](examples/) for code using:
 
-* Producers: basic producers, idempotent producers
-* Consumers: basic consumers, reading batches of messages
-* Performance tester
+* Producers: basic producers, idempotent producers, transactional producers.
+* Consumers: basic consumers, reading batches of messages.
+* Performance and latency testing tools.
 
 2. Refer to the [examples GitHub repo](https://github.com/confluentinc/examples/tree/master/clients/cloud/c) for code connecting to a cloud streaming data service based on Apache Kafka
 
@@ -155,13 +161,14 @@ Commercial support is available from [Confluent Inc](https://www.confluent.io/)
 File bug reports, feature requests and questions using
 [GitHub Issues](https://github.com/edenhill/librdkafka/issues)
 
-Questions and discussions are also welcome on the [Confluent Community slack](https://launchpass.com/confluentcommunity) #clients channel, or irc.freenode.org #apache-kafka channel.
+Questions and discussions are also welcome on the [Confluent Community slack](https://launchpass.com/confluentcommunity) #clients channel.
 
 
 # Language bindings #
 
   * C#/.NET: [confluent-kafka-dotnet](https://github.com/confluentinc/confluent-kafka-dotnet) (based on [rdkafka-dotnet](https://github.com/ah-/rdkafka-dotnet))
   * C++: [cppkafka](https://github.com/mfontanini/cppkafka)
+  * C++: [modern-cpp-kafka](https://github.com/Morgan-Stanley/modern-cpp-kafka)
   * Common Lisp: [cl-rdkafka](https://github.com/SahilKang/cl-rdkafka)
   * D (C-like): [librdkafka](https://github.com/DlangApache/librdkafka/)
   * D (C++-like): [librdkafkad](https://github.com/tamediadigital/librdkafka-d)
@@ -180,28 +187,8 @@ Questions and discussions are also welcome on the [Confluent Community slack](ht
   * Ruby: [rdkafka-ruby](https://github.com/appsignal/rdkafka-ruby)
   * Rust: [rust-rdkafka](https://github.com/fede1024/rust-rdkafka)
   * Tcl: [KafkaTcl](https://github.com/flightaware/kafkatcl)
+  * Shell: [kafkacat](https://github.com/edenhill/kafkacat) - Apache Kafka command line tool
   * Swift: [Perfect-Kafka](https://github.com/PerfectlySoft/Perfect-Kafka)
 
-# Users of librdkafka #
 
-  * [kafkacat](https://github.com/edenhill/kafkacat) - Apache Kafka swiss army knife
-  * [Wikimedia's varnishkafka](https://github.com/wikimedia/varnishkafka) - Varnish cache web log producer
-  * [Wikimedia's kafkatee](https://github.com/wikimedia/analytics-kafkatee) - Kafka multi consumer with filtering and fanout
-  * [rsyslog](https://www.rsyslog.com)
-  * [syslog-ng](https://www.syslog-ng.com)
-  * [collectd](https://collectd.org)
-  * [logkafka](https://github.com/Qihoo360/logkafka) - Collect logs and send to Kafka
-  * [redBorder](https://redborder.com)
-  * [Headweb](http://www.headweb.com/)
-  * [Produban's log2kafka](https://github.com/Produban/log2kafka) - Web log producer
-  * [fuse_kafka](https://github.com/yazgoo/fuse_kafka) - FUSE file system layer
-  * [node-kafkacat](https://github.com/Rafflecopter/node-kafkacat)
-  * [OVH](https://ovh.com) - [AntiDDOS](https://www.slideshare.net/hugfrance/hugfr-6-oct2014ovhantiddos)
-  * [otto.de](https://www.otto.de)'s [trackdrd](https://github.com/otto-de/trackrdrd) - Varnish log reader
-  * [Microwish](https://github.com/microwish) has a range of Kafka utilites for log aggregation, HDFS integration, etc.
-  * [aidp](https://github.com/weiboad/aidp) - kafka consumer embedded Lua scripting language in data process framework
-  * [Yandex ClickHouse](https://github.com/yandex/ClickHouse)
-  * [NXLog](https://nxlog.co/) - Enterprise logging system, Kafka input/output plugin.
-  * large unnamed financial institutions
-  * and many more..
-  * *Let [me](mailto:rdkafka@edenhill.se) know if you are using librdkafka*
+See [Powered by librdkafka](https://github.com/edenhill/librdkafka/wiki/Powered-by-librdkafka) for an incomplete list of librdkafka users.

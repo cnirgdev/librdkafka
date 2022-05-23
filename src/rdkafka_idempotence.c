@@ -160,6 +160,7 @@ rd_bool_t rd_kafka_idemp_check_error (rd_kafka_t *rk,
         case RD_KAFKA_RESP_ERR__UNSUPPORTED_FEATURE:
         case RD_KAFKA_RESP_ERR_INVALID_TRANSACTION_TIMEOUT:
         case RD_KAFKA_RESP_ERR_TRANSACTIONAL_ID_AUTHORIZATION_FAILED:
+        case RD_KAFKA_RESP_ERR_CLUSTER_AUTHORIZATION_FAILED:
                 if (rd_kafka_is_transactional(rk))
                         rd_kafka_txn_set_fatal_error(rk, RD_DONT_LOCK,
                                                      err, "%s", errstr);
@@ -386,6 +387,8 @@ void rd_kafka_idemp_request_pid_failed (rd_kafka_broker_t *rkb,
              err == RD_KAFKA_RESP_ERR_COORDINATOR_NOT_AVAILABLE))
                 rd_kafka_txn_coord_set(rk, NULL, "%s", errstr);
 
+        rk->rk_eos.txn_init_err = err;
+
         rd_kafka_idemp_set_state(rk, RD_KAFKA_IDEMP_STATE_REQ_PID);
 
         rd_kafka_wrunlock(rk);
@@ -547,6 +550,14 @@ void rd_kafka_idemp_drain_epoch_bump (rd_kafka_t *rk, const char *fmt, ...) {
         va_start(ap, fmt);
         rd_vsnprintf(buf, sizeof(buf), fmt, ap);
         va_end(ap);
+
+        if (rd_kafka_is_transactional(rk)) {
+                /* Only the Idempotent Producer is allowed to bump its own
+                 * epoch, the Transactional Producer needs to ask the broker
+                 * to bump it. */
+                rd_kafka_idemp_drain_reset(rk, buf);
+                return;
+        }
 
         rd_kafka_wrlock(rk);
         rd_kafka_dbg(rk, EOS, "DRAIN",

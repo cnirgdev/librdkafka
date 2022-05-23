@@ -31,6 +31,7 @@
 #include "rdtime.h"
 #include "rdsysqueue.h"
 
+#include "rdkafka_queue.h"
 
 static RD_INLINE void rd_kafka_timers_lock (rd_kafka_timers_t *rkts) {
         mtx_lock(&rkts->rkts_lock);
@@ -80,6 +81,8 @@ static void rd_kafka_timer_schedule (rd_kafka_timers_t *rkts,
 	    first->rtmr_next > rtmr->rtmr_next) {
 		TAILQ_INSERT_HEAD(&rkts->rkts_timers, rtmr, rtmr_link);
                 cnd_signal(&rkts->rkts_cond);
+                if (rkts->rkts_wakeq)
+                        rd_kafka_q_yield(rkts->rkts_wakeq, rd_true);
 	} else
 		TAILQ_INSERT_SORTED(&rkts->rkts_timers, rtmr,
                                     rd_kafka_timer_t *, rtmr_link,
@@ -116,6 +119,19 @@ int rd_kafka_timer_stop (rd_kafka_timers_t *rkts, rd_kafka_timer_t *rtmr,
 
 
 /**
+ * @returns true if timer is started, else false.
+ */
+rd_bool_t rd_kafka_timer_is_started (rd_kafka_timers_t *rkts,
+                                     const rd_kafka_timer_t *rtmr) {
+        rd_bool_t ret;
+        rd_kafka_timers_lock(rkts);
+        ret = rtmr->rtmr_interval != 0;
+        rd_kafka_timers_unlock(rkts);
+        return ret;
+}
+
+
+/**
  * @brief Start the provided timer with the given interval.
  *
  * Upon expiration of the interval (us) the callback will be called in the
@@ -141,7 +157,10 @@ void rd_kafka_timer_start0 (rd_kafka_timers_t *rkts,
 
 	rd_kafka_timer_stop(rkts, rtmr, 0/*!lock*/);
 
-	rtmr->rtmr_interval = interval;
+        /* Make sure the timer interval is non-zero or the timer
+         * won't be scheduled, which is not what the caller of .._start*()
+         * would expect. */
+        rtmr->rtmr_interval = interval == 0 ? 1 : interval;
 	rtmr->rtmr_callback = callback;
 	rtmr->rtmr_arg      = arg;
         rtmr->rtmr_oneshot  = oneshot;
@@ -304,11 +323,13 @@ void rd_kafka_timers_destroy (rd_kafka_timers_t *rkts) {
         mtx_destroy(&rkts->rkts_lock);
 }
 
-void rd_kafka_timers_init (rd_kafka_timers_t *rkts, rd_kafka_t *rk) {
+void rd_kafka_timers_init (rd_kafka_timers_t *rkts, rd_kafka_t *rk,
+                           struct rd_kafka_q_s *wakeq) {
         memset(rkts, 0, sizeof(*rkts));
         rkts->rkts_rk = rk;
         TAILQ_INIT(&rkts->rkts_timers);
         mtx_init(&rkts->rkts_lock, mtx_plain);
         cnd_init(&rkts->rkts_cond);
         rkts->rkts_enabled = 1;
+        rkts->rkts_wakeq = wakeq;
 }

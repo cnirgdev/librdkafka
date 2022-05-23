@@ -67,7 +67,7 @@ static int rd_kafka_mock_handle_Produce (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, TopicsCnt);
 
         /* Inject error, if any */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         while (TopicsCnt-- > 0) {
@@ -197,7 +197,7 @@ static int rd_kafka_mock_handle_Fetch (rd_kafka_mock_connection_t *mconn,
 
 
         /* Inject error, if any */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (rkbuf->rkbuf_reqhdr.ApiVersion >= 7) {
@@ -418,7 +418,7 @@ static int rd_kafka_mock_handle_ListOffset (rd_kafka_mock_connection_t *mconn,
 
 
         /* Inject error, if any */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         rd_kafka_buf_read_i32(rkbuf, &TopicsCnt);
@@ -551,7 +551,7 @@ static int rd_kafka_mock_handle_OffsetFetch (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_read_str(rkbuf, &GroupId);
 
         /* Inject error, if any */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         mrkb = rd_kafka_mock_cluster_get_coord(mcluster, RD_KAFKA_COORD_GROUP,
@@ -689,7 +689,7 @@ static int rd_kafka_mock_handle_OffsetCommit (rd_kafka_mock_connection_t *mconn,
 
 
         /* Inject error, if any */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         mrkb = rd_kafka_mock_cluster_get_coord(mcluster, RD_KAFKA_COORD_GROUP,
@@ -882,7 +882,6 @@ static int rd_kafka_mock_handle_Metadata (rd_kafka_mock_connection_t *mconn,
         const rd_kafka_mock_broker_t *mrkb;
         rd_kafka_topic_partition_list_t *requested_topics = NULL;
         rd_bool_t list_all_topics = rd_false;
-        rd_kafka_mock_topic_t *mtopic;
         int32_t TopicsCnt;
         int i;
 
@@ -949,6 +948,7 @@ static int rd_kafka_mock_handle_Metadata (rd_kafka_mock_connection_t *mconn,
         }
 
         if (list_all_topics) {
+                rd_kafka_mock_topic_t *mtopic;
                 /* Response: #Topics */
                 rd_kafka_buf_write_i32(resp, mcluster->topic_cnt);
 
@@ -1045,7 +1045,7 @@ rd_kafka_mock_handle_FindCoordinator (rd_kafka_mock_connection_t *mconn,
         }
 
         /* Inject error, if any */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err && RD_KAFKAP_STR_LEN(&Key) > 0) {
@@ -1147,7 +1147,7 @@ rd_kafka_mock_handle_JoinGroup (rd_kafka_mock_connection_t *mconn,
         }
 
         /* Inject error, if any */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err) {
@@ -1235,7 +1235,7 @@ rd_kafka_mock_handle_Heartbeat (rd_kafka_mock_connection_t *mconn,
         }
 
         /* Inject error, if any */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
         if (!err) {
                 mrkb = rd_kafka_mock_cluster_get_coord(mcluster,
@@ -1265,7 +1265,7 @@ rd_kafka_mock_handle_Heartbeat (rd_kafka_mock_connection_t *mconn,
                                                      GenerationId);
 
         if (!err)
-                rd_kafka_mock_cgrp_member_active(member);
+                rd_kafka_mock_cgrp_member_active(mcgrp, member);
 
         rd_kafka_buf_write_i16(resp, err); /* ErrorCode */
 
@@ -1307,7 +1307,7 @@ rd_kafka_mock_handle_LeaveGroup (rd_kafka_mock_connection_t *mconn,
         }
 
         /* Inject error, if any */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
         if (!err) {
                 mrkb = rd_kafka_mock_cluster_get_coord(mcluster,
@@ -1368,7 +1368,6 @@ rd_kafka_mock_handle_SyncGroup (rd_kafka_mock_connection_t *mconn,
         rd_kafka_resp_err_t err;
         rd_kafka_mock_cgrp_t *mcgrp = NULL;
         rd_kafka_mock_cgrp_member_t *member = NULL;
-        rd_bool_t is_leader;
 
         rd_kafka_buf_read_str(rkbuf, &GroupId);
         rd_kafka_buf_read_i32(rkbuf, &GenerationId);
@@ -1386,7 +1385,7 @@ rd_kafka_mock_handle_SyncGroup (rd_kafka_mock_connection_t *mconn,
         }
 
         /* Inject error, if any */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
         if (!err) {
                 mrkb = rd_kafka_mock_cluster_get_coord(mcluster,
@@ -1416,12 +1415,11 @@ rd_kafka_mock_handle_SyncGroup (rd_kafka_mock_connection_t *mconn,
                                                      GenerationId);
 
         if (!err)
-                rd_kafka_mock_cgrp_member_active(member);
-
-
-        is_leader = mcgrp->leader && mcgrp->leader == member;
+                rd_kafka_mock_cgrp_member_active(mcgrp, member);
 
         if (!err) {
+                rd_bool_t is_leader = mcgrp->leader && mcgrp->leader == member;
+
                 if (AssignmentCnt > 0 && !is_leader)
                         err = RD_KAFKA_RESP_ERR_NOT_LEADER_FOR_PARTITION; /* FIXME */
                 else if (AssignmentCnt == 0 && is_leader)
@@ -1509,7 +1507,7 @@ rd_kafka_mock_handle_InitProducerId (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, 0);
 
         /* Inject error */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err &&
@@ -1573,7 +1571,7 @@ rd_kafka_mock_handle_AddPartitionsToTxn (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, TopicsCnt);
 
         /* Inject error */
-        all_err = rd_kafka_mock_next_request_error(mcluster,
+        all_err = rd_kafka_mock_next_request_error(mconn,
                                                    rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!all_err &&
@@ -1655,7 +1653,7 @@ rd_kafka_mock_handle_AddOffsetsToTxn (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, 0);
 
         /* Inject error */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err &&
@@ -1709,7 +1707,7 @@ rd_kafka_mock_handle_TxnOffsetCommit (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, TopicsCnt);
 
         /* Inject error */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err &&
@@ -1802,7 +1800,7 @@ rd_kafka_mock_handle_EndTxn (rd_kafka_mock_connection_t *mconn,
         rd_kafka_buf_write_i32(resp, 0);
 
         /* Inject error */
-        err = rd_kafka_mock_next_request_error(mcluster,
+        err = rd_kafka_mock_next_request_error(mconn,
                                                rkbuf->rkbuf_reqhdr.ApiKey);
 
         if (!err &&
