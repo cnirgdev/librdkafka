@@ -37,23 +37,18 @@
 
 
 static const char *rd_kafka_mock_cgrp_state_names[] = {
-        "Empty",
-        "Joining",
-        "Syncing",
-        "Rebalancing",
-        "Up"
-};
+    "Empty", "Joining", "Syncing", "Rebalancing", "Up"};
 
 
-static void rd_kafka_mock_cgrp_rebalance (rd_kafka_mock_cgrp_t *mcgrp,
-                                          const char *reason);
+static void rd_kafka_mock_cgrp_rebalance(rd_kafka_mock_cgrp_t *mcgrp,
+                                         const char *reason);
 static void
-rd_kafka_mock_cgrp_member_destroy (rd_kafka_mock_cgrp_t *mcgrp,
-                                   rd_kafka_mock_cgrp_member_t *member);
+rd_kafka_mock_cgrp_member_destroy(rd_kafka_mock_cgrp_t *mcgrp,
+                                  rd_kafka_mock_cgrp_member_t *member);
 
-static void rd_kafka_mock_cgrp_set_state (rd_kafka_mock_cgrp_t *mcgrp,
-                                          unsigned int new_state,
-                                          const char *reason) {
+static void rd_kafka_mock_cgrp_set_state(rd_kafka_mock_cgrp_t *mcgrp,
+                                         unsigned int new_state,
+                                         const char *reason) {
         if (mcgrp->state == new_state)
                 return;
 
@@ -71,7 +66,11 @@ static void rd_kafka_mock_cgrp_set_state (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Mark member as active (restart session timer)
  */
-void rd_kafka_mock_cgrp_member_active (rd_kafka_mock_cgrp_member_t *member) {
+void rd_kafka_mock_cgrp_member_active(rd_kafka_mock_cgrp_t *mcgrp,
+                                      rd_kafka_mock_cgrp_member_t *member) {
+        rd_kafka_dbg(mcgrp->cluster->rk, MOCK, "MOCK",
+                     "Marking mock consumer group member %s as active",
+                     member->id);
         member->ts_last_activity = rd_clock();
 }
 
@@ -82,15 +81,14 @@ void rd_kafka_mock_cgrp_member_active (rd_kafka_mock_cgrp_member_t *member) {
  * @param member may be NULL.
  */
 rd_kafka_resp_err_t
-rd_kafka_mock_cgrp_check_state (rd_kafka_mock_cgrp_t *mcgrp,
-                                rd_kafka_mock_cgrp_member_t *member,
-                                const rd_kafka_buf_t *request,
-                                int32_t generation_id) {
-        int16_t ApiKey = request->rkbuf_reqhdr.ApiKey;
-        rd_bool_t has_generation_id =
-                ApiKey == RD_KAFKAP_SyncGroup ||
-                ApiKey == RD_KAFKAP_Heartbeat ||
-                ApiKey == RD_KAFKAP_OffsetCommit;
+rd_kafka_mock_cgrp_check_state(rd_kafka_mock_cgrp_t *mcgrp,
+                               rd_kafka_mock_cgrp_member_t *member,
+                               const rd_kafka_buf_t *request,
+                               int32_t generation_id) {
+        int16_t ApiKey              = request->rkbuf_reqhdr.ApiKey;
+        rd_bool_t has_generation_id = ApiKey == RD_KAFKAP_SyncGroup ||
+                                      ApiKey == RD_KAFKAP_Heartbeat ||
+                                      ApiKey == RD_KAFKAP_OffsetCommit;
 
         if (has_generation_id && generation_id != mcgrp->generation_id)
                 return RD_KAFKA_RESP_ERR_ILLEGAL_GENERATION;
@@ -98,8 +96,7 @@ rd_kafka_mock_cgrp_check_state (rd_kafka_mock_cgrp_t *mcgrp,
         if (ApiKey == RD_KAFKAP_OffsetCommit && !member)
                 return RD_KAFKA_RESP_ERR_UNKNOWN_MEMBER_ID;
 
-        switch (mcgrp->state)
-        {
+        switch (mcgrp->state) {
         case RD_KAFKA_MOCK_CGRP_STATE_EMPTY:
                 if (ApiKey == RD_KAFKAP_JoinGroup)
                         return RD_KAFKA_RESP_ERR_NO_ERROR;
@@ -114,8 +111,11 @@ rd_kafka_mock_cgrp_check_state (rd_kafka_mock_cgrp_t *mcgrp,
 
         case RD_KAFKA_MOCK_CGRP_STATE_SYNCING:
                 if (ApiKey == RD_KAFKAP_SyncGroup ||
+                    ApiKey == RD_KAFKAP_JoinGroup ||
                     ApiKey == RD_KAFKAP_LeaveGroup)
                         return RD_KAFKA_RESP_ERR_NO_ERROR;
+                else
+                        return RD_KAFKA_RESP_ERR_REBALANCE_IN_PROGRESS;
 
         case RD_KAFKA_MOCK_CGRP_STATE_REBALANCING:
                 if (ApiKey == RD_KAFKAP_JoinGroup ||
@@ -141,10 +141,10 @@ rd_kafka_mock_cgrp_check_state (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Set a member's assignment (from leader's SyncGroupRequest)
  */
-void
-rd_kafka_mock_cgrp_member_assignment_set (rd_kafka_mock_cgrp_t *mcgrp,
-                                          rd_kafka_mock_cgrp_member_t *member,
-                                          const rd_kafkap_bytes_t *Metadata) {
+void rd_kafka_mock_cgrp_member_assignment_set(
+    rd_kafka_mock_cgrp_t *mcgrp,
+    rd_kafka_mock_cgrp_member_t *member,
+    const rd_kafkap_bytes_t *Metadata) {
         if (member->assignment) {
                 rd_assert(mcgrp->assignment_cnt > 0);
                 mcgrp->assignment_cnt--;
@@ -162,8 +162,8 @@ rd_kafka_mock_cgrp_member_assignment_set (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Sync done (successfully) or failed, send responses back to members.
  */
-static void rd_kafka_mock_cgrp_sync_done (rd_kafka_mock_cgrp_t *mcgrp,
-                                          rd_kafka_resp_err_t err) {
+static void rd_kafka_mock_cgrp_sync_done(rd_kafka_mock_cgrp_t *mcgrp,
+                                         rd_kafka_resp_err_t err) {
         rd_kafka_mock_cgrp_member_t *member;
 
         TAILQ_FOREACH(member, &mcgrp->members, link) {
@@ -171,19 +171,27 @@ static void rd_kafka_mock_cgrp_sync_done (rd_kafka_mock_cgrp_t *mcgrp,
 
                 if ((resp = member->resp)) {
                         member->resp = NULL;
+                        rd_assert(resp->rkbuf_reqhdr.ApiKey ==
+                                  RD_KAFKAP_SyncGroup);
+
                         rd_kafka_buf_write_i16(resp, err); /* ErrorCode */
                         /* MemberState */
-                        rd_kafka_buf_write_kbytes(resp,
-                                                  !err ?
-                                                  member->assignment : NULL);
+                        rd_kafka_buf_write_kbytes(
+                            resp, !err ? member->assignment : NULL);
                 }
 
                 rd_kafka_mock_cgrp_member_assignment_set(mcgrp, member, NULL);
 
-                rd_kafka_mock_connection_set_blocking(member->conn, rd_false);
-                if (resp)
-                        rd_kafka_mock_connection_send_response(member->conn,
-                                                               resp);
+                if (member->conn) {
+                        rd_kafka_mock_connection_set_blocking(member->conn,
+                                                              rd_false);
+                        if (resp)
+                                rd_kafka_mock_connection_send_response(
+                                    member->conn, resp);
+                } else if (resp) {
+                        /* Member has disconnected. */
+                        rd_kafka_buf_destroy(resp);
+                }
         }
 }
 
@@ -192,7 +200,13 @@ static void rd_kafka_mock_cgrp_sync_done (rd_kafka_mock_cgrp_t *mcgrp,
  * @brief Check if all members have sent SyncGroupRequests, if so, propagate
  *        assignment to members.
  */
-static void rd_kafka_mock_cgrp_sync_check (rd_kafka_mock_cgrp_t *mcgrp) {
+static void rd_kafka_mock_cgrp_sync_check(rd_kafka_mock_cgrp_t *mcgrp) {
+
+        rd_kafka_dbg(mcgrp->cluster->rk, MOCK, "MOCK",
+                     "Mock consumer group %s: awaiting %d/%d syncing members "
+                     "in state %s",
+                     mcgrp->id, mcgrp->assignment_cnt, mcgrp->member_cnt,
+                     rd_kafka_mock_cgrp_state_names[mcgrp->state]);
 
         if (mcgrp->assignment_cnt < mcgrp->member_cnt)
                 return;
@@ -209,15 +223,15 @@ static void rd_kafka_mock_cgrp_sync_check (rd_kafka_mock_cgrp_t *mcgrp) {
  *        received.
  */
 rd_kafka_resp_err_t
-rd_kafka_mock_cgrp_member_sync_set (rd_kafka_mock_cgrp_t *mcgrp,
-                                    rd_kafka_mock_cgrp_member_t *member,
-                                    rd_kafka_mock_connection_t *mconn,
-                                    rd_kafka_buf_t *resp) {
+rd_kafka_mock_cgrp_member_sync_set(rd_kafka_mock_cgrp_t *mcgrp,
+                                   rd_kafka_mock_cgrp_member_t *member,
+                                   rd_kafka_mock_connection_t *mconn,
+                                   rd_kafka_buf_t *resp) {
 
         if (mcgrp->state != RD_KAFKA_MOCK_CGRP_STATE_SYNCING)
                 return RD_KAFKA_RESP_ERR_REBALANCE_IN_PROGRESS; /* FIXME */
 
-        rd_kafka_mock_cgrp_member_active(member);
+        rd_kafka_mock_cgrp_member_active(mcgrp, member);
 
         rd_assert(!member->resp);
 
@@ -236,8 +250,8 @@ rd_kafka_mock_cgrp_member_sync_set (rd_kafka_mock_cgrp_t *mcgrp,
  * @brief Member is explicitly leaving the group (through LeaveGroupRequest)
  */
 rd_kafka_resp_err_t
-rd_kafka_mock_cgrp_member_leave (rd_kafka_mock_cgrp_t *mcgrp,
-                                 rd_kafka_mock_cgrp_member_t *member) {
+rd_kafka_mock_cgrp_member_leave(rd_kafka_mock_cgrp_t *mcgrp,
+                                rd_kafka_mock_cgrp_member_t *member) {
 
         rd_kafka_dbg(mcgrp->cluster->rk, MOCK, "MOCK",
                      "Member %s is leaving group %s", member->id, mcgrp->id);
@@ -252,11 +266,11 @@ rd_kafka_mock_cgrp_member_leave (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Destroys/frees an array of protocols, including the array itself.
  */
-void rd_kafka_mock_cgrp_protos_destroy (rd_kafka_mock_cgrp_proto_t *protos,
-                                        int proto_cnt) {
+void rd_kafka_mock_cgrp_protos_destroy(rd_kafka_mock_cgrp_proto_t *protos,
+                                       int proto_cnt) {
         int i;
 
-        for (i = 0 ; i < proto_cnt ; i++) {
+        for (i = 0; i < proto_cnt; i++) {
                 rd_free(protos[i].name);
                 if (protos[i].metadata)
                         rd_free(protos[i].metadata);
@@ -266,13 +280,13 @@ void rd_kafka_mock_cgrp_protos_destroy (rd_kafka_mock_cgrp_proto_t *protos,
 }
 
 static void
-rd_kafka_mock_cgrp_rebalance_timer_restart (rd_kafka_mock_cgrp_t *mcgrp,
-                                            int timeout_ms);
+rd_kafka_mock_cgrp_rebalance_timer_restart(rd_kafka_mock_cgrp_t *mcgrp,
+                                           int timeout_ms);
 
 /**
  * @brief Elect consumer group leader and send JoinGroup responses
  */
-static void rd_kafka_mock_cgrp_elect_leader (rd_kafka_mock_cgrp_t *mcgrp) {
+static void rd_kafka_mock_cgrp_elect_leader(rd_kafka_mock_cgrp_t *mcgrp) {
         rd_kafka_mock_cgrp_member_t *member;
 
         rd_assert(mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_JOINING);
@@ -299,16 +313,21 @@ static void rd_kafka_mock_cgrp_elect_leader (rd_kafka_mock_cgrp_t *mcgrp) {
         /* Send JoinGroupResponses to all members */
         TAILQ_FOREACH(member, &mcgrp->members, link) {
                 rd_bool_t is_leader = member == mcgrp->leader;
-                int member_cnt = is_leader ? mcgrp->member_cnt : 0;
+                int member_cnt      = is_leader ? mcgrp->member_cnt : 0;
                 rd_kafka_buf_t *resp;
                 rd_kafka_mock_cgrp_member_t *member2;
                 rd_kafka_mock_connection_t *mconn;
 
-                rd_assert(member->conn && member->resp);
-                mconn = member->conn;
+                /* Member connection has been closed, it will eventually
+                 * reconnect or time out from the group. */
+                if (!member->conn || !member->resp)
+                        continue;
+                mconn        = member->conn;
                 member->conn = NULL;
-                resp = member->resp;
+                resp         = member->resp;
                 member->resp = NULL;
+
+                rd_assert(resp->rkbuf_reqhdr.ApiKey == RD_KAFKAP_JoinGroup);
 
                 rd_kafka_buf_write_i16(resp, 0); /* ErrorCode */
                 rd_kafka_buf_write_i32(resp, mcgrp->generation_id);
@@ -323,17 +342,22 @@ static void rd_kafka_mock_cgrp_elect_leader (rd_kafka_mock_cgrp_t *mcgrp) {
                                 rd_kafka_buf_write_str(resp, member2->id, -1);
                                 if (resp->rkbuf_reqhdr.ApiVersion >= 5)
                                         rd_kafka_buf_write_str(
-                                                resp,
-                                                member2->group_instance_id, -1);
+                                            resp, member2->group_instance_id,
+                                            -1);
                                 /* FIXME: look up correct protocol name */
                                 rd_assert(!rd_kafkap_str_cmp_str(
-                                                  member2->protos[0].name,
-                                                  mcgrp->protocol_name));
+                                    member2->protos[0].name,
+                                    mcgrp->protocol_name));
 
                                 rd_kafka_buf_write_kbytes(
-                                        resp, member2->protos[0].metadata);
+                                    resp, member2->protos[0].metadata);
                         }
                 }
+
+                /* Mark each member as active to avoid them timing out
+                 * at the same time as a JoinGroup handler that blocks
+                 * session.timeout.ms to elect a leader. */
+                rd_kafka_mock_cgrp_member_active(mcgrp, member);
 
                 rd_kafka_mock_connection_set_blocking(mconn, rd_false);
                 rd_kafka_mock_connection_send_response(mconn, resp);
@@ -353,18 +377,31 @@ static void rd_kafka_mock_cgrp_elect_leader (rd_kafka_mock_cgrp_t *mcgrp) {
 /**
  * @brief Trigger group rebalance.
  */
-static void rd_kafka_mock_cgrp_rebalance (rd_kafka_mock_cgrp_t *mcgrp,
-                                          const char *reason) {
+static void rd_kafka_mock_cgrp_rebalance(rd_kafka_mock_cgrp_t *mcgrp,
+                                         const char *reason) {
         int timeout_ms;
 
-        if (mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_EMPTY)
-                timeout_ms = 1000; /* First join, low timeout */
+        if (mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_JOINING)
+                return; /* Do nothing, group is already rebalancing. */
+        else if (mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_EMPTY)
+                timeout_ms = 3000; /* First join, low timeout.
+                                    * Same as group.initial.rebalance.delay.ms
+                                    * on the broker. */
         else if (mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_REBALANCING &&
                  mcgrp->member_cnt == mcgrp->last_member_cnt)
                 timeout_ms = 100; /* All members rejoined, quickly transition
                                    * to election. */
-        else
-                timeout_ms = mcgrp->session_timeout_ms;
+        else /* Let the rebalance delay be a bit shorter than the
+              * session timeout so that we don't time out waiting members
+              * who are also subject to the session timeout. */
+                timeout_ms = mcgrp->session_timeout_ms > 1000
+                                 ? mcgrp->session_timeout_ms - 1000
+                                 : mcgrp->session_timeout_ms;
+
+        if (mcgrp->state == RD_KAFKA_MOCK_CGRP_STATE_SYNCING)
+                /* Abort current Syncing state */
+                rd_kafka_mock_cgrp_sync_done(
+                    mcgrp, RD_KAFKA_RESP_ERR_REBALANCE_IN_PROGRESS);
 
         rd_kafka_mock_cgrp_set_state(mcgrp, RD_KAFKA_MOCK_CGRP_STATE_JOINING,
                                      reason);
@@ -374,13 +411,12 @@ static void rd_kafka_mock_cgrp_rebalance (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Consumer group state machine triggered by timer events.
  */
-static void rd_kafka_mock_cgrp_fsm_timeout (rd_kafka_mock_cgrp_t *mcgrp) {
+static void rd_kafka_mock_cgrp_fsm_timeout(rd_kafka_mock_cgrp_t *mcgrp) {
         rd_kafka_dbg(mcgrp->cluster->rk, MOCK, "MOCK",
                      "Mock consumer group %s FSM timeout in state %s",
                      mcgrp->id, rd_kafka_mock_cgrp_state_names[mcgrp->state]);
 
-        switch (mcgrp->state)
-        {
+        switch (mcgrp->state) {
         case RD_KAFKA_MOCK_CGRP_STATE_EMPTY:
                 /* No members, do nothing */
                 break;
@@ -390,8 +426,8 @@ static void rd_kafka_mock_cgrp_fsm_timeout (rd_kafka_mock_cgrp_t *mcgrp) {
                         rd_kafka_mock_cgrp_elect_leader(mcgrp);
                 else
                         rd_kafka_mock_cgrp_set_state(
-                                mcgrp, RD_KAFKA_MOCK_CGRP_STATE_EMPTY,
-                                "no members joined");
+                            mcgrp, RD_KAFKA_MOCK_CGRP_STATE_EMPTY,
+                            "no members joined");
                 break;
 
         case RD_KAFKA_MOCK_CGRP_STATE_SYNCING:
@@ -399,12 +435,11 @@ static void rd_kafka_mock_cgrp_fsm_timeout (rd_kafka_mock_cgrp_t *mcgrp) {
 
                 /* Send error response to all waiting members */
                 rd_kafka_mock_cgrp_sync_done(
-                        mcgrp,
-                        RD_KAFKA_RESP_ERR_REBALANCE_IN_PROGRESS /* FIXME */);
+                    mcgrp, RD_KAFKA_RESP_ERR_REBALANCE_IN_PROGRESS /* FIXME */);
 
                 rd_kafka_mock_cgrp_set_state(
-                        mcgrp, RD_KAFKA_MOCK_CGRP_STATE_REBALANCING,
-                        "timed out waiting for all members to synchronize");
+                    mcgrp, RD_KAFKA_MOCK_CGRP_STATE_REBALANCING,
+                    "timed out waiting for all members to synchronize");
                 break;
 
         case RD_KAFKA_MOCK_CGRP_STATE_REBALANCING:
@@ -422,8 +457,8 @@ static void rd_kafka_mock_cgrp_fsm_timeout (rd_kafka_mock_cgrp_t *mcgrp) {
         }
 }
 
-static void rd_kafka_mcgrp_rebalance_timer_cb (rd_kafka_timers_t *rkts,
-                                               void *arg) {
+static void rd_kafka_mcgrp_rebalance_timer_cb(rd_kafka_timers_t *rkts,
+                                              void *arg) {
         rd_kafka_mock_cgrp_t *mcgrp = arg;
 
         rd_kafka_mock_cgrp_fsm_timeout(mcgrp);
@@ -434,21 +469,17 @@ static void rd_kafka_mcgrp_rebalance_timer_cb (rd_kafka_timers_t *rkts,
  * @brief Restart the rebalance timer, postponing leader election.
  */
 static void
-rd_kafka_mock_cgrp_rebalance_timer_restart (rd_kafka_mock_cgrp_t *mcgrp,
-                                            int timeout_ms) {
-        rd_kafka_timer_start_oneshot(&mcgrp->cluster->timers,
-                                     &mcgrp->rebalance_tmr,
-                                     rd_true,
-                                     timeout_ms * 1000,
-                                     rd_kafka_mcgrp_rebalance_timer_cb,
-                                     mcgrp);
-
+rd_kafka_mock_cgrp_rebalance_timer_restart(rd_kafka_mock_cgrp_t *mcgrp,
+                                           int timeout_ms) {
+        rd_kafka_timer_start_oneshot(
+            &mcgrp->cluster->timers, &mcgrp->rebalance_tmr, rd_true,
+            timeout_ms * 1000, rd_kafka_mcgrp_rebalance_timer_cb, mcgrp);
 }
 
 
 static void
-rd_kafka_mock_cgrp_member_destroy (rd_kafka_mock_cgrp_t *mcgrp,
-                                   rd_kafka_mock_cgrp_member_t *member) {
+rd_kafka_mock_cgrp_member_destroy(rd_kafka_mock_cgrp_t *mcgrp,
+                                  rd_kafka_mock_cgrp_member_t *member) {
         rd_assert(mcgrp->member_cnt > 0);
         TAILQ_REMOVE(&mcgrp->members, member, link);
         mcgrp->member_cnt--;
@@ -473,8 +504,8 @@ rd_kafka_mock_cgrp_member_destroy (rd_kafka_mock_cgrp_t *mcgrp,
  * @brief Find member in group.
  */
 rd_kafka_mock_cgrp_member_t *
-rd_kafka_mock_cgrp_member_find (const rd_kafka_mock_cgrp_t *mcgrp,
-                                const rd_kafkap_str_t *MemberId) {
+rd_kafka_mock_cgrp_member_find(const rd_kafka_mock_cgrp_t *mcgrp,
+                               const rd_kafkap_str_t *MemberId) {
         const rd_kafka_mock_cgrp_member_t *member;
         TAILQ_FOREACH(member, &mcgrp->members, link) {
                 if (!rd_kafkap_str_cmp_str(MemberId, member->id))
@@ -489,14 +520,14 @@ rd_kafka_mock_cgrp_member_find (const rd_kafka_mock_cgrp_t *mcgrp,
  * @brief Update or add member to consumer group
  */
 rd_kafka_resp_err_t
-rd_kafka_mock_cgrp_member_add (rd_kafka_mock_cgrp_t *mcgrp,
-                               rd_kafka_mock_connection_t *mconn,
-                               rd_kafka_buf_t *resp,
-                               const rd_kafkap_str_t *MemberId,
-                               const rd_kafkap_str_t *ProtocolType,
-                               rd_kafka_mock_cgrp_proto_t *protos,
-                               int proto_cnt,
-                               int session_timeout_ms) {
+rd_kafka_mock_cgrp_member_add(rd_kafka_mock_cgrp_t *mcgrp,
+                              rd_kafka_mock_connection_t *mconn,
+                              rd_kafka_buf_t *resp,
+                              const rd_kafkap_str_t *MemberId,
+                              const rd_kafkap_str_t *ProtocolType,
+                              rd_kafka_mock_cgrp_proto_t *protos,
+                              int proto_cnt,
+                              int session_timeout_ms) {
         rd_kafka_mock_cgrp_member_t *member;
         rd_kafka_resp_err_t err;
 
@@ -522,21 +553,21 @@ rd_kafka_mock_cgrp_member_add (rd_kafka_mock_cgrp_t *mcgrp,
                 mcgrp->member_cnt++;
         }
 
+        if (mcgrp->state != RD_KAFKA_MOCK_CGRP_STATE_JOINING)
+                rd_kafka_mock_cgrp_rebalance(mcgrp, "member join");
+
         mcgrp->session_timeout_ms = session_timeout_ms;
 
         if (member->protos)
                 rd_kafka_mock_cgrp_protos_destroy(member->protos,
                                                   member->proto_cnt);
-        member->protos = protos;
+        member->protos    = protos;
         member->proto_cnt = proto_cnt;
 
         rd_assert(!member->resp);
         member->resp = resp;
         member->conn = mconn;
-        rd_kafka_mock_cgrp_member_active(member);
-
-        if (mcgrp->state != RD_KAFKA_MOCK_CGRP_STATE_JOINING)
-                rd_kafka_mock_cgrp_rebalance(mcgrp, "member join");
+        rd_kafka_mock_cgrp_member_active(mcgrp, member);
 
         return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
@@ -544,16 +575,17 @@ rd_kafka_mock_cgrp_member_add (rd_kafka_mock_cgrp_t *mcgrp,
 /**
  * @brief Check if any members have exceeded the session timeout.
  */
-static void
-rd_kafka_mock_cgrp_session_tmr_cb (rd_kafka_timers_t *rkts, void *arg) {
+static void rd_kafka_mock_cgrp_session_tmr_cb(rd_kafka_timers_t *rkts,
+                                              void *arg) {
         rd_kafka_mock_cgrp_t *mcgrp = arg;
         rd_kafka_mock_cgrp_member_t *member, *tmp;
-        rd_ts_t now = rd_clock();
+        rd_ts_t now     = rd_clock();
         int timeout_cnt = 0;
 
         TAILQ_FOREACH_SAFE(member, &mcgrp->members, link, tmp) {
                 if (member->ts_last_activity +
-                    (mcgrp->session_timeout_ms * 1000) > now)
+                        (mcgrp->session_timeout_ms * 1000) >
+                    now)
                         continue;
 
                 rd_kafka_dbg(mcgrp->cluster->rk, MOCK, "MOCK",
@@ -569,15 +601,15 @@ rd_kafka_mock_cgrp_session_tmr_cb (rd_kafka_timers_t *rkts, void *arg) {
 }
 
 
-void rd_kafka_mock_cgrp_destroy (rd_kafka_mock_cgrp_t *mcgrp) {
+void rd_kafka_mock_cgrp_destroy(rd_kafka_mock_cgrp_t *mcgrp) {
         rd_kafka_mock_cgrp_member_t *member;
 
         TAILQ_REMOVE(&mcgrp->cluster->cgrps, mcgrp, link);
 
-        rd_kafka_timer_stop(&mcgrp->cluster->timers,
-                            &mcgrp->rebalance_tmr, rd_true);
-        rd_kafka_timer_stop(&mcgrp->cluster->timers,
-                            &mcgrp->session_tmr, rd_true);
+        rd_kafka_timer_stop(&mcgrp->cluster->timers, &mcgrp->rebalance_tmr,
+                            rd_true);
+        rd_kafka_timer_stop(&mcgrp->cluster->timers, &mcgrp->session_tmr,
+                            rd_true);
         rd_free(mcgrp->id);
         rd_free(mcgrp->protocol_type);
         if (mcgrp->protocol_name)
@@ -588,9 +620,8 @@ void rd_kafka_mock_cgrp_destroy (rd_kafka_mock_cgrp_t *mcgrp) {
 }
 
 
-rd_kafka_mock_cgrp_t *
-rd_kafka_mock_cgrp_find (rd_kafka_mock_cluster_t *mcluster,
-                         const rd_kafkap_str_t *GroupId) {
+rd_kafka_mock_cgrp_t *rd_kafka_mock_cgrp_find(rd_kafka_mock_cluster_t *mcluster,
+                                              const rd_kafkap_str_t *GroupId) {
         rd_kafka_mock_cgrp_t *mcgrp;
         TAILQ_FOREACH(mcgrp, &mcluster->cgrps, link) {
                 if (!rd_kafkap_str_cmp_str(GroupId, mcgrp->id))
@@ -605,9 +636,9 @@ rd_kafka_mock_cgrp_find (rd_kafka_mock_cluster_t *mcluster,
  * @brief Find or create a consumer group
  */
 rd_kafka_mock_cgrp_t *
-rd_kafka_mock_cgrp_get (rd_kafka_mock_cluster_t *mcluster,
-                        const rd_kafkap_str_t *GroupId,
-                        const rd_kafkap_str_t *ProtocolType) {
+rd_kafka_mock_cgrp_get(rd_kafka_mock_cluster_t *mcluster,
+                       const rd_kafkap_str_t *GroupId,
+                       const rd_kafkap_str_t *ProtocolType) {
         rd_kafka_mock_cgrp_t *mcgrp;
 
         mcgrp = rd_kafka_mock_cgrp_find(mcluster, GroupId);
@@ -618,14 +649,13 @@ rd_kafka_mock_cgrp_get (rd_kafka_mock_cluster_t *mcluster,
 
         mcgrp = rd_calloc(1, sizeof(*mcgrp));
 
-        mcgrp->cluster = mcluster;
-        mcgrp->id = RD_KAFKAP_STR_DUP(GroupId);
+        mcgrp->cluster       = mcluster;
+        mcgrp->id            = RD_KAFKAP_STR_DUP(GroupId);
         mcgrp->protocol_type = RD_KAFKAP_STR_DUP(ProtocolType);
         mcgrp->generation_id = 1;
         TAILQ_INIT(&mcgrp->members);
-        rd_kafka_timer_start(&mcluster->timers,
-                             &mcgrp->session_tmr,
-                             1000*1000 /*1s*/,
+        rd_kafka_timer_start(&mcluster->timers, &mcgrp->session_tmr,
+                             1000 * 1000 /*1s*/,
                              rd_kafka_mock_cgrp_session_tmr_cb, mcgrp);
 
         TAILQ_INSERT_TAIL(&mcluster->cgrps, mcgrp, link);
@@ -638,8 +668,8 @@ rd_kafka_mock_cgrp_get (rd_kafka_mock_cluster_t *mcluster,
  * @brief A client connection closed, check if any cgrp has any state
  *        for this connection that needs to be cleared.
  */
-void rd_kafka_mock_cgrps_connection_closed (rd_kafka_mock_cluster_t *mcluster,
-                                            rd_kafka_mock_connection_t *mconn) {
+void rd_kafka_mock_cgrps_connection_closed(rd_kafka_mock_cluster_t *mcluster,
+                                           rd_kafka_mock_connection_t *mconn) {
         rd_kafka_mock_cgrp_t *mcgrp;
 
         TAILQ_FOREACH(mcgrp, &mcluster->cgrps, link) {

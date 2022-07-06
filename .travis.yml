@@ -1,84 +1,170 @@
 language: c
-dist: trusty
-sudo: false
+dist: xenial
 cache: ccache
+
+addons:
+  apt:
+    packages:
+    - python3
+    - python3-pip
+    - python3-setuptools
+    # required by openssl installer
+    - perl
+
 env:
- global:
-  - ARCH=x64
+  global:
+  - secure: "q7DQ6KCiQyMEpBf8mxPFl6hY9JEoaOUdIaLh1IuYn5TctiNIA+J6O/bL/dyDSy2Yjor61WAiiMOh77eMykm1wPl72kqjR97ui0uCq7BQQn4MWtKrXXi0eWLF3bYt2FbUGJZvrM0xeoWzSYT6np7CKu8ssgL8Fvr4bmf152IpdQ8="
+  - secure: "XpFExynXwbSr6vTuGsZVyqF4sti+UmRxX2sztjpTdaIH0yo60d6KYT0SRW7BLdZNA6/XI1l1GPTAwcDwTM1XasnnFrD7i88uZsAneA/xEgZTGXtnVVWPJAcVoX/75Rxeibc8CfSc5MO9QmBMiGGuI3S6HHCj4RzCJacBhOjIhfA="
+
 matrix:
  include:
- - name: "Linux GCC: +centos +debian"
+ - name: "Linux GCC: +Debian packages +BuiltinRegex +Strict"
+   if: tag IS present
    os: linux
    compiler: gcc
-   env: ADDITIONAL_BUILDS="centos debian"
+   env:
+     - ADDITIONAL_BUILDS="debian"
+     - ADDITIONAL_BUILD_FLAGS="--source-deps-only"
+     - LINKAGE=std
    before_script:
-    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
- - name: "Linux clang: +alpine"
+    - ./configure --install-deps --disable-lz4-ext --disable-regex-ext --prefix="$PWD/dest" --enable-strip
+
+ - name: "RPM packages"
+   if: tag IS present
+   os: linux
+   compiler: gcc
+   env: ADDITIONAL_BUILDS="centos" SKIP_MAKE=y
+
+ - name: "Linux clang: +alpine +manylinux +werror"
    os: linux
    compiler: clang
-   env: ADDITIONAL_BUILDS="alpine"
+   env: ADDITIONAL_BUILDS="alpine manylinux2010_x86_64" ADDITIONAL_BUILD_FLAGS="--source-deps-only" LINKAGE=std
    before_script:
-    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-werror --enable-strip
+
+ - name: "Linux clang: +static +alpine-static -gssapi"
+   if: tag IS present
+   os: linux
+   compiler: clang
+   env: ADDITIONAL_BUILDS="alpine-static" LINKAGE=static
+   before_script:
+    - ./configure --enable-static --install-deps --source-deps-only --disable-gssapi --disable-lz4-ext --prefix="$PWD/dest" --enable-strip
+
  - name: "OSX GCC"
+   if: tag IS PRESENT
    os: osx
    compiler: gcc
+   env: LINKAGE=std HOMEBREW_NO_AUTO_UPDATE=1
    before_script:
-    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+    - ./configure --install-deps --source-deps-only --disable-lz4-ext --prefix="$PWD/dest" --enable-strip
+
  - name: "OSX clang: +static"
+   if: tag IS PRESENT
    os: osx
    compiler: clang
+   env: LINKAGE=static HOMEBREW_NO_AUTO_UPDATE=1
    before_script:
-    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-static
- - name: "Linux GCC: +integration-tests +copyright-check +doc-check"
+    - ./configure --install-deps --source-deps-only --disable-lz4-ext --prefix="$PWD/dest" --enable-static --enable-strip
+
+ - name: "Windows MinGW-w64 Dynamic"
+   if: tag IS PRESENT
+   os: windows
+   env:
+    - LINKAGE=std
+    - SKIP_MAKE=y
+   before_install:
+    - source ./packaging/mingw-w64/travis-before-install.sh
+   before_script:
+    - ./packaging/mingw-w64/configure-build-msys2-mingw.sh
+
+ - name: "Windows MinGW-w64 Static"
+   os: windows
+   env:
+    - LINKAGE=static
+    - SKIP_MAKE=y
+   before_install:
+    - source ./packaging/mingw-w64/travis-before-install.sh
+   before_script:
+    - ./packaging/mingw-w64/configure-build-msys2-mingw-static.sh
+    - ./packaging/mingw-w64/run-tests.sh
+
+ - name: "Linux GCC: +integration-tests +copyright-check +doc-check +devel +code-cov +c99 +c++98"
    os: linux
    dist: xenial
+   language: python
+   python: 3.8
    compiler: gcc
    env: NO_ARTIFACTS=y RUN_INTEGRATION_TESTS=y COPYRIGHT_CHECK=y DOC_CHECK=y
    before_script:
     - wget -O rapidjson-dev.deb https://launchpad.net/ubuntu/+archive/primary/+files/rapidjson-dev_1.1.0+dfsg2-3_all.deb
     - sudo dpkg -i rapidjson-dev.deb
-    - sudo pip install -r tests/requirements.txt
+    - python -m pip install -U pip
+    - python -m pip -V
+    - python -m pip install -r tests/requirements.txt
     - sudo apt update
-    - sudo apt install -y doxygen graphviz
-    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
- - name: "Linux GCC: +devel +code-cov"
+    - sudo apt install -y doxygen graphviz gdb
+    - ./configure --CFLAGS="-std=c99" --CXXFLAGS="-std=c++98" --install-deps --enable-devel --disable-lz4-ext --prefix="$PWD/dest"
+    - ./packaging/tools/rdutcoverage.sh
+
+ - name: "Linux GCC arm64: +static -gssapi"
    os: linux
+   arch: arm64
+   dist: bionic
+   compiler: gcc
+   env: LINKAGE=std
+   before_script:
+    - ./configure --disable-gssapi --install-deps --source-deps-only --enable-static --disable-lz4-ext --prefix="$PWD/dest" --enable-strip
+
+ - name: "Linux GCC s390x: +devel"
+   if: tag IS PRESENT
+   os: linux
+   arch: s390x
    dist: bionic
    compiler: gcc
    env: NO_ARTIFACTS=y
    before_script:
+    - sudo apt install -y gdb
     - ./configure --enable-devel --disable-lz4-ext --prefix="$PWD/dest"
-    - ./packaging/tools/rdutcoverage.sh
 
 install:
  - ccache -s || echo "CCache is not available."
  - rm -rf artifacts dest
  - mkdir dest artifacts
+ - if [[ $TRAVIS_OS_NAME == "linux" ]]; then sudo apt update || true; fi
+ - if [[ $TRAVIS_DIST == "trusty" || $TRAVIS_DIST == "xenial" ]]; then sudo apt-get install -y libssl1.0.0 libssl-dev ; fi
+ - if [[ $TRAVIS_DIST == "bionic" || $TRAVIS_DIST == "focal" ]]; then sudo apt-get install -y libssl1.1 libssl-dev ; fi
+ - if [[ -n $DOCKER_PASSWORD && $TRAVIS_OS_NAME == "linux" ]]; then echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin ; fi
 
-before_script:
+before_cache:
+ - if [[ $TRAVIS_OS_NAME == windows ]]; then $msys2 pacman --sync --clean --noconfirm ; fi
+
 script:
-- make -j2 all examples check && make -j2 -C tests build
-- if [[ $RUN_INTEGRATION_TESTS != y ]]; then make -C tests run_local_quick ; fi
-- make install
+- if [[ $SKIP_MAKE != y ]]; then (make -j2 all examples check && make -j2 -C tests build) || travis_terminate 1 ; fi
+# Tag:    Run quick local test suite on
+# No tag: Run unit tests.
+- if [[ $SKIP_MAKE != y && $RUN_INTEGRATION_TESTS != y ]]; then if [[ -n $TRAVIS_TAG ]]; then make -C tests run_local_quick; else make -C tests unit ; fi ; fi
+- if [[ $SKIP_MAKE != y ]]; then make install || travis_terminate 1 ; fi
 - if [[ -z $NO_ARTIFACTS ]]; then (cd dest && tar cvzf ../artifacts/librdkafka-${CC}.tar.gz .) ; fi
-- for distro in $ADDITIONAL_BUILDS ; do packaging/tools/distro-build.sh $distro || exit 1 ; done
-- if [[ $COPYRIGHT_CHECK == y ]]; then make copyright-check ; fi
-- if [[ $DOC_CHECK == y ]]; then make docs ; fi
-- if [[ $RUN_INTEGRATION_TESTS == y ]]; then (cd tests && ./interactive_broker_version.py -c "make quick" 2.3.0) ; fi
+- if [[ -n $TRAVIS_TAG ]]; then for distro in $ADDITIONAL_BUILDS ; do packaging/tools/distro-build.sh $distro $ADDITIONAL_BUILD_FLAGS --enable-strip || travis_terminate 1 ; done ; fi
+- if [[ $COPYRIGHT_CHECK == y ]]; then make copyright-check || travis_terminate 1; fi
+- if [[ $DOC_CHECK == y ]]; then make docs || travis_terminate 1 ; fi
+- if [[ -z $TRAVIS_TAG && $RUN_INTEGRATION_TESTS == y ]]; then (cd tests && travis_retry ./interactive_broker_version.py -c "make quick" 2.8.1) || travis_terminate 1 ; fi
+- if [[ -f tests/core ]] && (which gdb >/dev/null); then (cd tests && LD_LIBRARY_PATH=../src:../src-cpp gdb ./test-runner core < backtrace.gdb) ; fi
+- sha256sum artifacts/* || true
 
 deploy:
   provider: s3
   access_key_id:
-    secure: "m8FQrFesK0xSS1wHo2S7cuWkpO7VB91dBmj1XIYLRXZSkbMpKBJATcFcHNbrAp3slEp7wLAnT7CHrQ4ccQi4H68Z7mjEwdq4VKRE+7zqJ/feK8MOFNeSHWLQzgwLUYlRlc9+tzLNwxMuL2ilWgdjKOArsUVHo9LEKNfQ3T6zCJU="
+    secure: "sRsKY1YoPDb3b+9hHnBv4tDSdyB/FraYEKI1/+aKmqWxvOI6xYYFFP0Tvn6f4Rgk0wzYmxO/5V+cR+fmKxVhb1pItFXOdVqML0ilOTP5gtlOPUeHu9fytqw3q7GgMV8JR75g60BNVko9vZegtd2LIq6FWzAIvPSUJOAw7qekjGU="
   secret_access_key:
-    secure: "GE6O0gk5VRervntCKAmczfBdSOvbr9bouJ15H2rpcOgHi8KTDEjI/NS69eLiRRSHBCARtcRqN4wfgy+/dn7D1VklY8a1rAKu02wGjw+fq7k7GVSSmynR/aF619R4SIABsaAhNCwswXnLHuLlq8HFk5ulG3z8DUvYBczB45bWZfQ="
+    secure: "ZDjH6Z9CJr2yo7Splm+0xpo30QbO+cpeqxFUn1d9XOyLZQ0dapr6iboxdPlJaCOIhqVUWXS0IJgFwCW+5vWb9Za6tFumP1MtJGiwE6bqr820G8E02umwSvbNijr44h+EyxQcxP71Ljjk22Pfu7SLKWqMJ/iIzcYe6Z6Sz8obSWA="
   bucket: librdkafka-ci-packages
   region: us-west-1
   skip_cleanup: true
   local-dir: artifacts
-  upload-dir: librdkafka/p-librdkafka__bld-travis__plat-${TRAVIS_OS_NAME}__arch-${ARCH}__tag-${TRAVIS_TAG}__sha-${TRAVIS_COMMIT}__bid-${TRAVIS_JOB_NUMBER}
+  upload-dir: librdkafka/p-librdkafka__bld-travis__plat-${TRAVIS_OS_NAME}__arch-${TRAVIS_CPU_ARCH}__tag-${TRAVIS_TAG}__sha-${TRAVIS_COMMIT}__bid-${TRAVIS_JOB_NUMBER}__lnk-${LINKAGE}
   on:
     repo: edenhill/librdkafka
     all_branches: true
     tags: true
-    on: $NO_ARTIFACTS != y
+    condition: $NO_ARTIFACTS != y

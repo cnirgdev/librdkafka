@@ -15,6 +15,7 @@ set(
     0013-null-msgs.c
     0014-reconsume-191.c
     0015-offset_seeks.c
+    0016-client_swname.c
     0017-compression.c
     0018-cgrp_term.c
     0019-list_groups.c
@@ -98,7 +99,30 @@ set(
     0104-fetch_from_follower_mock.c
     0105-transactions_mock.c
     0106-cgrp_sess_timeout.c
-    0108-client_swname.c
+    0107-topic_recreate.c
+    0109-auto_create_topics.cpp
+    0110-batch_size.cpp
+    0111-delay_create_topics.cpp
+    0112-assign_unknown_part.c
+    0113-cooperative_rebalance.cpp
+    0114-sticky_partitioning.cpp
+    0115-producer_auth.cpp
+    0116-kafkaconsumer_close.cpp
+    0117-mock_errors.c
+    0118-commit_rebalance.c
+    0119-consumer_auth.cpp
+    0120-asymmetric_subscription.c
+    0121-clusterid.c
+    0122-buffer_cleaning_after_rebalance.c
+    0123-connections_max_idle.c
+    0124-openssl_invalid_engine.c
+    0125-immediate_flush.c
+    0126-oauthbearer_oidc.c
+    0128-sasl_callback_queue.cpp
+    0129-fetch_aborted_msgs.c
+    0130-store_offsets.c
+    0131-connect_timeout.c
+    0132-strategy_ordering.c
     8000-idle.cpp
     test.c
     testcpp.cpp

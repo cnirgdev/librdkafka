@@ -52,17 +52,20 @@ typedef struct _consumer_s {
 /**
  * @brief Call poll until a rebalance has been triggered
  */
-static int static_member_wait_rebalance0 (int line,
-                                          _consumer_t *c, int64_t start,
-                                          int64_t *target, int timeout_ms) {
+static int static_member_wait_rebalance0(int line,
+                                         _consumer_t *c,
+                                         int64_t start,
+                                         int64_t *target,
+                                         int timeout_ms) {
         int64_t tmout = test_clock() + (timeout_ms * 1000);
+        test_timing_t t_time;
 
         c->curr_line = line;
 
-        TEST_SAY("line %d: %s awaiting %s event\n",
-                 line, rd_kafka_name(c->rk),
+        TEST_SAY("line %d: %s awaiting %s event\n", line, rd_kafka_name(c->rk),
                  rd_kafka_err2name(c->expected_rb_event));
 
+        TIMING_START(&t_time, "wait_rebalance");
         while (timeout_ms < 0 ? 1 : test_clock() <= tmout) {
                 if (*target > start) {
                         c->curr_line = 0;
@@ -70,32 +73,33 @@ static int static_member_wait_rebalance0 (int line,
                 }
                 test_consumer_poll_once(c->rk, c->mv, 1000);
         }
+        TIMING_STOP(&t_time);
 
         c->curr_line = 0;
 
-        TEST_SAY("line %d: %s timed out awaiting %s event\n",
-                 line, rd_kafka_name(c->rk),
-                 rd_kafka_err2name(c->expected_rb_event));
+        TEST_SAY("line %d: %s timed out awaiting %s event\n", line,
+                 rd_kafka_name(c->rk), rd_kafka_err2name(c->expected_rb_event));
 
         return 0;
 }
 
-#define static_member_expect_rebalance(C,START,TARGET,TIMEOUT_MS) do {  \
-                if (!static_member_wait_rebalance0(__LINE__,C,          \
-                                                   START,TARGET,TIMEOUT_MS)) \
-                        TEST_FAIL("%s: timed out waiting for %s event", \
-                                  rd_kafka_name((C)->rk),               \
-                                  rd_kafka_err2name((C)->expected_rb_event)); \
+#define static_member_expect_rebalance(C, START, TARGET, TIMEOUT_MS)           \
+        do {                                                                   \
+                if (!static_member_wait_rebalance0(__LINE__, C, START, TARGET, \
+                                                   TIMEOUT_MS))                \
+                        TEST_FAIL("%s: timed out waiting for %s event",        \
+                                  rd_kafka_name((C)->rk),                      \
+                                  rd_kafka_err2name((C)->expected_rb_event));  \
         } while (0)
 
-#define static_member_wait_rebalance(C,START,TARGET,TIMEOUT_MS)         \
-        static_member_wait_rebalance0(__LINE__,C, START,TARGET,TIMEOUT_MS)
+#define static_member_wait_rebalance(C, START, TARGET, TIMEOUT_MS)             \
+        static_member_wait_rebalance0(__LINE__, C, START, TARGET, TIMEOUT_MS)
 
 
-static void rebalance_cb (rd_kafka_t *rk,
-                          rd_kafka_resp_err_t err,
-                          rd_kafka_topic_partition_list_t *parts,
-                          void *opaque) {
+static void rebalance_cb(rd_kafka_t *rk,
+                         rd_kafka_resp_err_t err,
+                         rd_kafka_topic_partition_list_t *parts,
+                         void *opaque) {
         _consumer_t *c = opaque;
 
         TEST_ASSERT(c->expected_rb_event == err,
@@ -104,15 +108,14 @@ static void rebalance_cb (rd_kafka_t *rk,
                     rd_kafka_err2name(c->expected_rb_event),
                     rd_kafka_err2name(err));
 
-        switch (err)
-        {
+        switch (err) {
         case RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS:
                 TEST_SAY("line %d: %s Assignment (%d partition(s)):\n",
                          c->curr_line, rd_kafka_name(rk), parts->cnt);
                 test_print_partition_list(parts);
 
                 c->partition_cnt = parts->cnt;
-                c->assigned_at = test_clock();
+                c->assigned_at   = test_clock();
                 rd_kafka_assign(rk, parts);
 
                 break;
@@ -120,8 +123,8 @@ static void rebalance_cb (rd_kafka_t *rk,
         case RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS:
                 c->revoked_at = test_clock();
                 rd_kafka_assign(rk, NULL);
-                TEST_SAY("line %d: %s revoked %d partitions\n",
-                         c->curr_line, rd_kafka_name(c->rk), parts->cnt);
+                TEST_SAY("line %d: %s revoked %d partitions\n", c->curr_line,
+                         rd_kafka_name(c->rk), parts->cnt);
 
                 break;
 
@@ -138,17 +141,19 @@ static void rebalance_cb (rd_kafka_t *rk,
 }
 
 
-static void do_test_static_group_rebalance (void) {
+static void do_test_static_group_rebalance(void) {
         rd_kafka_conf_t *conf;
         test_msgver_t mv;
         int64_t rebalance_start;
         _consumer_t c[_CONSUMER_CNT] = RD_ZERO_INIT;
-        const int msgcnt = 100;
-        uint64_t testid  = test_id_generate();
-        const char *topic = test_mk_topic_name("0102_static_group_rebalance",
-                                               1);
+        const int msgcnt             = 100;
+        uint64_t testid              = test_id_generate();
+        const char *topic =
+            test_mk_topic_name("0102_static_group_rebalance", 1);
         char *topics = rd_strdup(tsprintf("^%s.*", topic));
         test_timing_t t_close;
+
+        SUB_TEST();
 
         test_conf_init(&conf, NULL, 70);
         test_msgver_init(&mv, testid);
@@ -162,6 +167,7 @@ static void do_test_static_group_rebalance (void) {
         test_conf_set(conf, "session.timeout.ms", "6000");
         test_conf_set(conf, "auto.offset.reset", "earliest");
         test_conf_set(conf, "topic.metadata.refresh.interval.ms", "500");
+        test_conf_set(conf, "metadata.max.age.ms", "5000");
         test_conf_set(conf, "enable.partition.eof", "true");
         test_conf_set(conf, "group.instance.id", "consumer1");
 
@@ -175,6 +181,8 @@ static void do_test_static_group_rebalance (void) {
                                        rd_kafka_conf_dup(conf), NULL);
         rd_kafka_conf_destroy(conf);
 
+        test_wait_topic_exists(c[1].rk, topic, 5000);
+
         test_consumer_subscribe(c[0].rk, topics);
         test_consumer_subscribe(c[1].rk, topics);
 
@@ -185,7 +193,7 @@ static void do_test_static_group_rebalance (void) {
          * interleave calls to poll while awaiting our assignment to avoid
          * unexpected rebalances being triggered.
          */
-        rebalance_start = test_clock();
+        rebalance_start        = test_clock();
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
         while (!static_member_wait_rebalance(&c[0], rebalance_start,
@@ -205,11 +213,11 @@ static void do_test_static_group_rebalance (void) {
          * after rejoin/rebalance operations.
          */
         c[0].curr_line = __LINE__;
-        test_consumer_poll("serve.queue",
-                           c[0].rk, testid, c[0].partition_cnt, 0, -1, &mv);
+        test_consumer_poll("serve.queue", c[0].rk, testid, c[0].partition_cnt,
+                           0, -1, &mv);
         c[1].curr_line = __LINE__;
-        test_consumer_poll("serve.queue",
-                           c[1].rk, testid, c[1].partition_cnt, 0, -1, &mv);
+        test_consumer_poll("serve.queue", c[1].rk, testid, c[1].partition_cnt,
+                           0, -1, &mv);
 
         test_msgver_verify("first.verify", &mv, TEST_MSGVER_ALL, 0, msgcnt);
 
@@ -229,7 +237,7 @@ static void do_test_static_group_rebalance (void) {
 
         /* Await assignment */
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
-        rebalance_start = test_clock();
+        rebalance_start        = test_clock();
         while (!static_member_wait_rebalance(&c[1], rebalance_start,
                                              &c[1].assigned_at, 1000)) {
                 c[0].curr_line = __LINE__;
@@ -250,7 +258,7 @@ static void do_test_static_group_rebalance (void) {
         test_create_topic(c->rk, tsprintf("%snew", topic), 1, 1);
 
         /* Await revocation */
-        rebalance_start = test_clock();
+        rebalance_start        = test_clock();
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         while (!static_member_wait_rebalance(&c[0], rebalance_start,
@@ -259,8 +267,8 @@ static void do_test_static_group_rebalance (void) {
                 test_consumer_poll_once(c[1].rk, &mv, 0);
         }
 
-        static_member_expect_rebalance(&c[1], rebalance_start,
-                                       &c[1].revoked_at, -1);
+        static_member_expect_rebalance(&c[1], rebalance_start, &c[1].revoked_at,
+                                       -1);
 
         /* Await assignment */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
@@ -285,10 +293,10 @@ static void do_test_static_group_rebalance (void) {
         /* Await revocation */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
-        static_member_expect_rebalance(&c[1], rebalance_start,
-                                       &c[1].revoked_at, -1);
-        static_member_expect_rebalance(&c[0], rebalance_start,
-                                       &c[0].revoked_at, -1);
+        static_member_expect_rebalance(&c[1], rebalance_start, &c[1].revoked_at,
+                                       -1);
+        static_member_expect_rebalance(&c[0], rebalance_start, &c[0].revoked_at,
+                                       -1);
 
         /* New cgrp generation with 1 member, c[0] */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
@@ -301,8 +309,8 @@ static void do_test_static_group_rebalance (void) {
 
         /* End previous single member generation */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
-        static_member_expect_rebalance(&c[0], rebalance_start,
-                                       &c[0].revoked_at, -1);
+        static_member_expect_rebalance(&c[0], rebalance_start, &c[0].revoked_at,
+                                       -1);
 
         /* Await assignment */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
@@ -323,10 +331,10 @@ static void do_test_static_group_rebalance (void) {
          * Block long enough for consumer 2 to be evicted from the group
          * `max.poll.interval.ms` + `session.timeout.ms`
          */
-        rebalance_start = test_clock();
+        rebalance_start        = test_clock();
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
-        c[0].curr_line = __LINE__;
+        c[0].curr_line         = __LINE__;
         test_consumer_poll_no_msgs("wait.max.poll", c[0].rk, testid,
                                    6000 + 9000);
         c[1].curr_line = __LINE__;
@@ -340,8 +348,8 @@ static void do_test_static_group_rebalance (void) {
                 test_consumer_poll_once(c[1].rk, &mv, 0);
         }
 
-        static_member_expect_rebalance(&c[1], rebalance_start,
-                                       &c[1].revoked_at, -1);
+        static_member_expect_rebalance(&c[1], rebalance_start, &c[1].revoked_at,
+                                       -1);
 
         /* Await assignment */
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
@@ -357,15 +365,15 @@ static void do_test_static_group_rebalance (void) {
 
         TEST_SAY("== Testing `session.timeout.ms` member eviction ==\n");
 
-        rebalance_start = test_clock();
+        rebalance_start        = test_clock();
         c[0].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         TIMING_START(&t_close, "consumer close");
         test_consumer_close(c[0].rk);
         rd_kafka_destroy(c[0].rk);
 
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
-        static_member_expect_rebalance(&c[1], rebalance_start,
-                                       &c[1].revoked_at, 2*7000);
+        static_member_expect_rebalance(&c[1], rebalance_start, &c[1].revoked_at,
+                                       2 * 7000);
 
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS;
         static_member_expect_rebalance(&c[1], rebalance_start,
@@ -376,23 +384,24 @@ static void do_test_static_group_rebalance (void) {
          * the last Heartbeat or SyncGroup request was sent we need to
          * allow some leeway on the minimum side (4s), and also some on
          * the maximum side (1s) for slow runtimes. */
-        TIMING_ASSERT(&t_close, 6000-4000, 9000+1000);
+        TIMING_ASSERT(&t_close, 6000 - 4000, 9000 + 1000);
 
         c[1].expected_rb_event = RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS;
         test_consumer_close(c[1].rk);
         rd_kafka_destroy(c[1].rk);
 
-        test_msgver_verify("final.validation", &mv, TEST_MSGVER_ALL, 0,
-                           msgcnt);
+        test_msgver_verify("final.validation", &mv, TEST_MSGVER_ALL, 0, msgcnt);
         test_msgver_clear(&mv);
         free(topics);
+
+        SUB_TEST_PASS();
 }
 
 
 /**
  * @brief Await a non-empty assignment for all consumers in \p c
  */
-static void await_assignment_multi (const char *what, rd_kafka_t **c, int cnt) {
+static void await_assignment_multi(const char *what, rd_kafka_t **c, int cnt) {
         rd_kafka_topic_partition_list_t *parts;
         int assignment_cnt;
 
@@ -404,7 +413,7 @@ static void await_assignment_multi (const char *what, rd_kafka_t **c, int cnt) {
 
                 assignment_cnt = 0;
 
-                for (i = 0 ; i < cnt ; i++) {
+                for (i = 0; i < cnt; i++) {
                         test_consumer_poll_no_msgs("poll", c[i], 0, timeout_ms);
                         timeout_ms = 100;
 
@@ -425,24 +434,24 @@ static const rd_kafka_t *valid_fatal_rk;
 /**
  * @brief Tells test harness that fatal error should not fail the current test
  */
-static int is_fatal_cb (rd_kafka_t *rk, rd_kafka_resp_err_t err,
-                        const char *reason) {
+static int
+is_fatal_cb(rd_kafka_t *rk, rd_kafka_resp_err_t err, const char *reason) {
         return rk != valid_fatal_rk;
 }
 
 /**
  * @brief Test that consumer fencing raises a fatal error
  */
-static void do_test_fenced_member (void) {
+static void do_test_fenced_member(void) {
         rd_kafka_t *c[3]; /* 0: consumer2b, 1: consumer1, 2: consumer2a */
         rd_kafka_conf_t *conf;
-        const char *topic = test_mk_topic_name("0102_static_group_rebalance",
-                                               1);
+        const char *topic =
+            test_mk_topic_name("0102_static_group_rebalance", 1);
         rd_kafka_message_t *rkm;
         char errstr[512];
         rd_kafka_resp_err_t err;
 
-        TEST_SAY(_C_MAG "[ Test fenced member ]\n");
+        SUB_TEST();
 
         test_conf_init(&conf, NULL, 30);
 
@@ -453,6 +462,8 @@ static void do_test_fenced_member (void) {
 
         test_conf_set(conf, "group.instance.id", "consumer2");
         c[2] = test_create_consumer(topic, NULL, rd_kafka_conf_dup(conf), NULL);
+
+        test_wait_topic_exists(c[2], topic, 5000);
 
         test_consumer_subscribe(c[1], topic);
         test_consumer_subscribe(c[2], topic);
@@ -479,17 +490,15 @@ static void do_test_fenced_member (void) {
         TEST_ASSERT(rkm != NULL, "Expected error, not timeout");
         TEST_ASSERT(rkm->err == RD_KAFKA_RESP_ERR__FATAL,
                     "Expected ERR__FATAL, not %s: %s",
-                    rd_kafka_err2str(rkm->err),
-                    rd_kafka_message_errstr(rkm));
+                    rd_kafka_err2str(rkm->err), rd_kafka_message_errstr(rkm));
         TEST_SAY("Fenced consumer returned expected: %s: %s\n",
-                 rd_kafka_err2name(rkm->err),
-                 rd_kafka_message_errstr(rkm));
+                 rd_kafka_err2name(rkm->err), rd_kafka_message_errstr(rkm));
 
 
         /* Read the actual error */
         err = rd_kafka_fatal_error(c[2], errstr, sizeof(errstr));
-        TEST_SAY("%s fatal error: %s: %s\n",
-                 rd_kafka_name(c[2]), rd_kafka_err2name(err), errstr);
+        TEST_SAY("%s fatal error: %s: %s\n", rd_kafka_name(c[2]),
+                 rd_kafka_err2name(err), errstr);
         TEST_ASSERT(err == RD_KAFKA_RESP_ERR_FENCED_INSTANCE_ID,
                     "Expected ERR_FENCED_INSTANCE_ID as fatal error, not %s",
                     rd_kafka_err2name(err));
@@ -509,11 +518,13 @@ static void do_test_fenced_member (void) {
 
         rd_kafka_destroy(c[0]);
         rd_kafka_destroy(c[1]);
+
+        SUB_TEST_PASS();
 }
 
 
 
-int main_0102_static_group_rebalance (int argc, char **argv) {
+int main_0102_static_group_rebalance(int argc, char **argv) {
 
         do_test_static_group_rebalance();
 

@@ -6,15 +6,18 @@
 #   mkl_require libzstd
 #
 # And then call the following function from the correct place/order in checks:
-#   mkl_check libzstd [<action>]
+#   mkl_check libzstd
 #
 
-mkl_toggle_option "Feature" ENABLE_ZSTD "--enable-zstd" "Enable support for ZSTD compression" "y"
+mkl_toggle_option "Feature" ENABLE_ZSTD "--enable-zstd" "Enable support for ZSTD compression" "try"
 
 function manual_checks {
-    local action=${1:-disable}
-
-    [[ $ENABLE_ZSTD == y ]] || return 0
+    case "$ENABLE_ZSTD" in
+        n) return 0 ;;
+        y) local action=fail ;;
+        try) local action=disable ;;
+        *) mkl_err "mklove internal error: invalid value for ENABLE_ZSTD: $ENABLE_ZSTD"; exit 1 ;;
+    esac
 
     mkl_meta_set "libzstd" "brew" "zstd"
     mkl_meta_set "libzstd" "apk" "zstd-dev zstd-static"
@@ -39,12 +42,15 @@ void foo (void) {
 function install_source {
     local name=$1
     local destdir=$2
-    local ver=1.3.8
+    local ver=1.5.0
+    local checksum="5194fbfa781fcf45b98c5e849651aa7b3b0a008c6b72d4a0db760f3002291e94"
 
     echo "### Installing $name $ver from source to $destdir"
     if [[ ! -f Makefile ]]; then
-        curl -sL https://github.com/facebook/zstd/releases/download/v${ver}/zstd-${ver}.tar.gz | \
-            tar xzf - --strip-components 1
+        mkl_download_archive \
+            "https://github.com/facebook/zstd/releases/download/v${ver}/zstd-${ver}.tar.gz" \
+            "256" \
+            $checksum || return 1
     fi
 
     time make -j DESTDIR="${destdir}" prefix=/usr install
